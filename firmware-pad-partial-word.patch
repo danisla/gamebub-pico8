@@ -1,0 +1,38 @@
+--- a/firmware/handheld/src/core/mod.rs	2026-09-27 12:46:57.001673267 -0700
++++ b/firmware/handheld/src/core/mod.rs	2026-09-27 12:46:57.016060784 -0700
+@@ -644,10 +644,31 @@
+                 let transfer_start = Instant::now();
+                 let max_clock = Some(Hertz(info.max_transfer_speed * 1000 * 2));
+                 let command = SpiCommand::new(info.transfer_word_size);
+-                Device::lock()
+-                    .fpga
+-                    .spi_write(max_clock, command, info.address + transferred, chunk)
+-                    .unwrap();
++                // The FPGA only receives whole words: pad a partial last word
++                // (a file size that isn't a multiple of the word size) with 0s.
++                let word_bytes = 1usize << (info.transfer_word_size as u32);
++                let whole = chunk.len() - chunk.len() % word_bytes;
++                let mut device = Device::lock();
++                if whole > 0 {
++                    device
++                        .fpga
++                        .spi_write(max_clock, command, info.address + transferred, &chunk[..whole])
++                        .unwrap();
++                }
++                if whole < chunk.len() {
++                    let mut last = [0u8; 8];
++                    last[..chunk.len() - whole].copy_from_slice(&chunk[whole..]);
++                    device
++                        .fpga
++                        .spi_write(
++                            max_clock,
++                            command,
++                            info.address + transferred + whole as u32,
++                            &last[..word_bytes],
++                        )
++                        .unwrap();
++                }
++                drop(device);
+                 transferred += chunk.len() as u32;
+                 overall_transferred += chunk.len() as u64;
+                 transfer_duration += transfer_start.elapsed();

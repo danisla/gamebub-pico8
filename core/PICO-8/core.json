@@ -1,0 +1,10 @@
+{
+  "metadata": {
+    "id": "PICO-8",
+    "name": "PICO-8",
+    "author": "fake-08 (RISC-V)"
+  },
+  "bitstreams": [
+    { "target": "gamebub_rev4", "filename": "pico8_rev4.bit" }
+  ]
+}

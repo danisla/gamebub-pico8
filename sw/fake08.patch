@@ -1,0 +1,410 @@
+diff -ruN a/libs/z8lua/fix32.h b/libs/z8lua/fix32.h
+--- a/libs/z8lua/fix32.h	2026-09-27 14:58:35.525267546 -0700
++++ b/libs/z8lua/fix32.h	2026-09-27 14:58:35.533047254 -0700
+@@ -25,6 +25,43 @@
+     inline fix32() = default;
+ 
+     // Convert from/to double
++#if defined(__GAMEBUB__)
++    // No FPU: convert with integer operations (the implicit conversion to
++    // double is used for every number argument of the PICO-8 API functions).
++    inline fix32(double d)
++      : m_bits(from_double_bits(d))
++    {}
++
++    inline operator double() const
++    {
++        int32_t v = m_bits;
++        if (v == 0) return 0.0;
++        uint64_t sign = v < 0 ? 1 : 0;
++        uint32_t a = v < 0 ? uint32_t(0) - uint32_t(v) : uint32_t(v);
++        int e = 31 - __builtin_clz(a);
++        uint64_t mantissa = (uint64_t(a) << (52 - e)) & ((uint64_t(1) << 52) - 1);
++        uint64_t bits = (sign << 63) | (uint64_t(e - 16 + 1023) << 52) | mantissa;
++        double d;
++        __builtin_memcpy(&d, &bits, sizeof(d));
++        return d;
++    }
++
++    // int32_t(int64_t(d * 65536.0)), without floating point operations.
++    static inline int32_t from_double_bits(double d)
++    {
++        uint64_t bits;
++        __builtin_memcpy(&bits, &d, sizeof(bits));
++        int e = int((bits >> 52) & 0x7ff) - 1023;
++        if (e < -17 || e >= 1024) return 0;
++        uint64_t m = (bits & ((uint64_t(1) << 52) - 1)) | (uint64_t(1) << 52);
++        int shift = e + 16 - 52;
++        uint64_t r;
++        if (shift >= 0) r = shift >= 64 ? 0 : m << shift;
++        else r = -shift >= 64 ? 0 : m >> -shift;
++        if (bits >> 63) r = uint64_t(0) - r;
++        return int32_t(uint32_t(r));
++    }
++#else
+     inline fix32(double d)
+       : m_bits(int32_t(int64_t(d * 65536.0)))
+     {}
+@@ -33,6 +70,7 @@
+     {
+         return double(m_bits) * (1.0 / 65536.0);
+     }
++#endif
+ 
+     // Conversions up to int16_t are safe.
+     inline fix32(int8_t x)  : m_bits(int32_t(x << 16)) {}
+diff -ruN a/libs/z8lua/lstate.c b/libs/z8lua/lstate.c
+--- a/libs/z8lua/lstate.c	2026-09-27 14:58:35.526347485 -0700
++++ b/libs/z8lua/lstate.c	2026-09-27 14:58:35.532350829 -0700
+@@ -87,6 +87,11 @@
+     memcpy(buff + p, &t, sizeof(t)); p += sizeof(t); }
+ 
+ static unsigned int makeseed (lua_State *L) {
++#if defined(Z8_FIXED_SEED)
++  /* Tests: a seed independent of memory addresses, for reproducible runs. */
++  (void)L;
++  return 0x5eed;
++#endif
+   char buff[4 * sizeof(size_t)];
+   unsigned int h = luai_makeseed();
+   int p = 0;
+diff -ruN a/libs/z8lua/lvm.c b/libs/z8lua/lvm.c
+--- a/libs/z8lua/lvm.c	2026-09-27 14:58:35.526855875 -0700
++++ b/libs/z8lua/lvm.c	2026-09-27 14:58:35.532866282 -0700
+@@ -571,9 +571,25 @@
+         } \
+         else { Protect(luaV_arith(L, ra, rb, rb, tm)); } }
+ 
++#if defined(__GNUC__) && defined(Z8_COMPUTED_GOTO)
++/* Direct threaded dispatch (GCC labels as values): each instruction jumps to
++   the next instruction's handler. The fetch is the same as at the top of the
++   main loop. */
++#define vmfetch() { \
++    i = *(ci->u.l.savedpc++); \
++    if ((L->hookmask & (LUA_MASKLINE | LUA_MASKCOUNT)) && \
++        (--L->hookcount == 0 || L->hookmask & LUA_MASKLINE)) { \
++      Protect(traceexec(L)); \
++    } \
++    ra = RA(i); }
++#define vmdispatch(o)	goto *vm_disptab[o];
++#define vmcase(l,b)	L_##l: {b} vmfetch(); goto *vm_disptab[GET_OPCODE(i)];
++#define vmcasenb(l,b)	L_##l: {b}		/* nb = no break */
++#else
+ #define vmdispatch(o)	switch(o)
+ #define vmcase(l,b)	case l: {b}  break;
+ #define vmcasenb(l,b)	case l: {b}		/* nb = no break */
++#endif
+ 
+ //turn off optimizations for this method.
+ //OP_FORLOOP doesn't correctly detect wrapping in certain cases if optimization is on and aggressive
+@@ -594,6 +610,63 @@
+   cl = clLvalue(ci->func);
+   k = cl->p->k;
+   base = ci->u.l.base;
++#if defined(__GNUC__) && defined(Z8_COMPUTED_GOTO)
++  static const void *const vm_disptab[NUM_OPCODES] = {
++    &&L_OP_MOVE,
++    &&L_OP_LOADK,
++    &&L_OP_LOADKX,
++    &&L_OP_LOADBOOL,
++    &&L_OP_LOADNIL,
++    &&L_OP_GETUPVAL,
++    &&L_OP_GETTABUP,
++    &&L_OP_GETTABLE,
++    &&L_OP_SETTABUP,
++    &&L_OP_SETUPVAL,
++    &&L_OP_SETTABLE,
++    &&L_OP_NEWTABLE,
++    &&L_OP_SELF,
++    &&L_OP_ADD,
++    &&L_OP_SUB,
++    &&L_OP_MUL,
++    &&L_OP_DIV,
++    &&L_OP_MOD,
++    &&L_OP_POW,
++    &&L_OP_IDIV,
++    &&L_OP_BAND,
++    &&L_OP_BOR,
++    &&L_OP_BXOR,
++    &&L_OP_SHL,
++    &&L_OP_SHR,
++    &&L_OP_LSHR,
++    &&L_OP_ROTL,
++    &&L_OP_ROTR,
++    &&L_OP_UNM,
++    &&L_OP_BNOT,
++    &&L_OP_NOT,
++    &&L_OP_PEEK,
++    &&L_OP_PEEK2,
++    &&L_OP_PEEK4,
++    &&L_OP_LEN,
++    &&L_OP_CONCAT,
++    &&L_OP_JMP,
++    &&L_OP_EQ,
++    &&L_OP_LT,
++    &&L_OP_LE,
++    &&L_OP_TEST,
++    &&L_OP_TESTSET,
++    &&L_OP_CALL,
++    &&L_OP_TAILCALL,
++    &&L_OP_RETURN,
++    &&L_OP_FORLOOP,
++    &&L_OP_FORPREP,
++    &&L_OP_TFORCALL,
++    &&L_OP_TFORLOOP,
++    &&L_OP_SETLIST,
++    &&L_OP_CLOSURE,
++    &&L_OP_VARARG,
++    &&L_OP_EXTRAARG
++  };
++#endif
+   /* main loop of interpreter */
+   for (;;) {
+     Instruction i = *(ci->u.l.savedpc++);
+diff -ruN a/source/graphics.cpp b/source/graphics.cpp
+--- a/source/graphics.cpp	2026-09-27 14:58:35.523299551 -0700
++++ b/source/graphics.cpp	2026-09-27 14:58:35.530394826 -0700
+@@ -763,8 +763,31 @@
+         memset(p + minx / 2, color * 0x11, (maxx - minx + 1) / 2);
+ 	}
+ 	else {
++		// Same as _setPixelFromPen for each pixel, with the draw state read
++		// once for the span.
++		const uint8_t col = drawState.color;
++		const uint8_t c0 = drawState.drawPaletteMap[col & 0x0f] & 0x0f;
++		const uint8_t c1 = drawState.drawPaletteMap[(col >> 4) & 0x0f] & 0x0f;
++		const bool altTransparent = drawState.fillPatternTransparencyBit & 1;
++		const uint16_t fillp = ((uint16_t)drawState.fillPattern[1] << 8) + drawState.fillPattern[0];
++		// Pattern bits of this row: bit (15 - (x & 3)) for column x & 3.
++		const unsigned rowBits = (fillp >> (12 - 4 * (y & 3))) & 0xf;
++		const bool masked = hwState.colorBitmask != 0xff;
++		const uint8_t writeMask = hwState.colorBitmask & 15;
++		const uint8_t readMask = hwState.colorBitmask >> 4;
++		uint8_t *row = screenBuffer + y * 64;
+ 		for (int x = minx; x <= maxx; x++){
+-			_setPixelFromPen(x, y);
++			const bool alt = (rowBits >> (3 - (x & 3))) & 1;
++			if (alt && altTransparent) {
++				continue;
++			}
++			uint8_t c = alt ? c1 : c0;
++			uint8_t &b = row[x >> 1];
++			if (masked) {
++				const uint8_t source = (x & 1) ? b >> 4 : b & 0x0f;
++				c = (source & ~writeMask) | (c & writeMask & readMask);
++			}
++			b = (x & 1) ? (b & 0x0f) | (c << 4) : (b & 0xf0) | (c & 0x0f);
+ 		}
+ 	}
+ }
+@@ -1088,16 +1111,31 @@
+ 		_safeSetPixelFromPen(ox, oy + 1);
+ 	}
+ 	else if (r > 0) {
++		// The midpoint loop draws some rows several times (with the widest
++		// span last covering the others): find each visible row's widest span,
++		// then draw it once. (Drawing a row again doesn't change the result.)
++		auto &drawState = _memory->drawState;
++		int16_t half[128];
++		for (int i = 0; i < 128; i++) half[i] = -1;
+ 		int x = -r, y = 0, err = 2 - 2 * r;
+ 		do {
+-			_private_h_line(ox - x, ox + x, oy + y);
+-			_private_h_line(ox - x, ox + x, oy - y);
++			const int rows[2] = {oy + y, oy - y};
++			for (int row : rows) {
++				if (row >= drawState.clip_yb && row < drawState.clip_ye && -x > half[row]) {
++					half[row] = -x;
++				}
++			}
+ 			r = err;
+ 			if (r > x)
+ 				err += ++x * 2 + 1;
+ 			if (r <= y)
+ 				err += ++y * 2 + 1;
+ 		} while (x < 0);
++		for (int row = drawState.clip_yb; row < drawState.clip_ye; row++) {
++			if (half[row] >= 0) {
++				_private_h_line(ox - half[row], ox + half[row], row);
++			}
++		}
+ 	}
+ }
+ 
+@@ -1818,70 +1856,64 @@
+ }
+ 
+ 
+-uint8_t Graphics::mget(int celx, int cely){
+-	const bool bigMap = _memory->hwState.mapMemMapping >= 0x80;
+-	const int bigMapLocation = _memory->hwState.mapMemMapping << 8;
+-	const int mapSize = bigMap 
+-		? 0x10000 - bigMapLocation
+-		: 8192;
+-
+-	const int mapW = _memory->hwState.widthOfTheMap == 0 ? 256 : _memory->hwState.widthOfTheMap;
+-	const int mapH = mapSize / mapW;
+-	const int maxXIdx = mapW - 1;
+-	const int maxYIdx = mapH - 1;
+-
+-	const int idx = cely * mapW + celx;
+-
+-	if (celx < 0 || celx > maxXIdx || cely < 0 || cely > maxYIdx) {
+-        return 0;
++namespace {
++// Map geometry (from the map memory mapping and width registers). Computing it
++// needs a division, so it's cached: mget is called for every cell by map().
++struct MapGeometry {
++	uint8_t mapping;
++	uint8_t width;
++	bool bigMap;
++	int mapW;
++	int mapH;
++	int offset; // big map: offset in userData
++};
++MapGeometry mapGeometry = {0xff, 0xff, false, 0, 0, 0};
++
++inline const MapGeometry &getMapGeometry(PicoRam *memory) {
++	uint8_t mapping = memory->hwState.mapMemMapping;
++	uint8_t width = memory->hwState.widthOfTheMap;
++	if (mapping != mapGeometry.mapping || width != mapGeometry.width) {
++		const bool bigMap = mapping >= 0x80;
++		const int bigMapLocation = mapping << 8;
++		const int mapSize = bigMap ? 0x10000 - bigMapLocation : 8192;
++		const int mapW = width == 0 ? 256 : width;
++		mapGeometry.mapping = mapping;
++		mapGeometry.width = width;
++		mapGeometry.bigMap = bigMap;
++		mapGeometry.mapW = mapW;
++		mapGeometry.mapH = mapSize / mapW;
++		mapGeometry.offset = 0x8000 - mapSize;
++	}
++	return mapGeometry;
++}
++
++inline uint8_t *mapCell(PicoRam *memory, const MapGeometry &g, int celx, int cely) {
++	if (celx < 0 || celx >= g.mapW || cely < 0 || cely >= g.mapH) {
++		return nullptr;
++	}
++	const int idx = cely * g.mapW + celx;
++	if (g.bigMap) {
++		return &memory->userData[g.offset + idx];
++	}
++	if (idx < 4096) {
++		return &memory->mapData[idx];
+ 	}
+-	
+-	if (bigMap){
+-		const int offset = 0x8000 - mapSize;
+-		return _memory->userData[offset + idx];
+-	}
+-	else {
+-		if (idx < 4096) {
+-			return _memory->mapData[idx];
+-		}
+-		else if (idx < 8192){
+-			return _memory->spriteSheetData[idx];
+-		}
++	if (idx < 8192) {
++		return &memory->spriteSheetData[idx];
+ 	}
++	return nullptr;
++}
++} // namespace
+ 
+-	return 0;
++uint8_t Graphics::mget(int celx, int cely){
++	uint8_t *cell = mapCell(_memory, getMapGeometry(_memory), celx, cely);
++	return cell ? *cell : 0;
+ }
+ 
+ void Graphics::mset(int celx, int cely, uint8_t snum){
+-	const bool bigMap = _memory->hwState.mapMemMapping >= 0x80;
+-	const int bigMapLocation = _memory->hwState.mapMemMapping << 8;
+-	const int mapSize = bigMap 
+-		? 0x10000 - bigMapLocation
+-		: 8192;
+-
+-	const int mapW = _memory->hwState.widthOfTheMap == 0 ? 256 : _memory->hwState.widthOfTheMap;
+-	const int mapH = mapSize / mapW;
+-
+-	const int maxXIdx = mapW - 1;
+-	const int maxYIdx = mapH - 1;
+-
+-	if (celx < 0 || celx > maxXIdx || cely < 0 || cely > maxYIdx) {
+-        return;
+-	}
+-
+-	const int idx = cely * mapW + celx;
+-
+-	if (bigMap){
+-		const int offset = 0x8000 - mapSize;
+-		_memory->userData[offset + idx] = snum;
+-	}
+-	else {
+-		if (idx < 4096)  {
+-			_memory->mapData[idx] = snum;
+-		}
+-		else if (idx < 8192) {
+-			_memory->spriteSheetData[idx] = snum;
+-		}
++	uint8_t *cell = mapCell(_memory, getMapGeometry(_memory), celx, cely);
++	if (cell) {
++		*cell = snum;
+ 	}
+ }
+ 
+@@ -1890,9 +1922,20 @@
+ }
+ 
+ void Graphics::map(int celx, int cely, int sx, int sy, int celw, int celh, uint8_t layer) {
+-	for (int y = 0; y < celh; y++) {
+-		for (int x = 0; x < celw; x++) {
+-			uint8_t cell = mget(celx + x, cely + y);
++	// Only visit the cells that are (partly) inside the clip rectangle: cell
++	// (x, y) is drawn at (sx + 8x, sy + 8y) - camera.
++	const auto &drawState = _memory->drawState;
++	const int ox = sx - drawState.camera_x;
++	const int oy = sy - drawState.camera_y;
++	const int x0 = std::max(0, (drawState.clip_xb - ox) >> 3);
++	const int x1 = std::min(celw, (drawState.clip_xe - ox + 7) >> 3);
++	const int y0 = std::max(0, (drawState.clip_yb - oy) >> 3);
++	const int y1 = std::min(celh, (drawState.clip_ye - oy + 7) >> 3);
++	const MapGeometry &g = getMapGeometry(_memory);
++	for (int y = y0; y < y1; y++) {
++		for (int x = x0; x < x1; x++) {
++			const uint8_t *p = mapCell(_memory, g, celx + x, cely + y);
++			const uint8_t cell = p ? *p : 0;
+ 			if (cell && ((layer == 0) || (fget(cell) & layer))) {
+ 				spr(cell, sx + x * 8, sy + y * 8);
+ 			}
+diff -ruN a/source/vm.cpp b/source/vm.cpp
+--- a/source/vm.cpp	2026-09-27 14:58:35.523878013 -0700
++++ b/source/vm.cpp	2026-09-27 14:58:35.529779404 -0700
+@@ -1019,6 +1019,12 @@
+     _memory->data[addr + 3] = (uint8_t)(ubits >> 24);
+ }
+ 
++void Vm::flushCartData() {
++    if (_currentCartdataKey.length() > 0) {
++        _host->saveCartData(_currentCartdataKey, getSerializedCartData());
++    }
++}
++
+ bool Vm::vm_cartdata(string key) {
+     //match pico 8 errors
+     if (key.length() == 0 || key.length() > 64) {
+diff -ruN a/source/vm.h b/source/vm.h
+--- a/source/vm.h	2026-09-27 14:58:35.523915764 -0700
++++ b/source/vm.h	2026-09-27 14:58:35.530368296 -0700
+@@ -113,6 +113,10 @@
+     bool IsPaused();
+ 
+     std::string getSerializedCartData();
++    /// Save the cart data (if the cart uses it). fake-08 saves it when the
++    /// cart is closed; platforms that are shut down without closing the cart
++    /// can call this periodically.
++    void flushCartData();
+     void deserializeCartDataToMemory(std::string cartDataStr);
+ 
+     uint8_t vm_peek(int addr);

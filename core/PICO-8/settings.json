@@ -1,0 +1,11 @@
+{
+  "settings": [
+    {
+      "id": 0,
+      "label": "Reset",
+      "type": "action",
+      "address": "0x00002000",
+      "value": 1
+    }
+  ]
+}

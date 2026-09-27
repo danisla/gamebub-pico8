@@ -1,0 +1,180 @@
+# PICO-8 core for Game Bub
+
+A [PICO-8](https://www.lexaloffle.com/pico-8.php) fantasy console core for the
+[Game Bub](https://gamebub.net/) handheld, built with the Game Bub framework. It
+runs as an SD card core.
+
+Like the [MiSTer PICO-8 core](https://github.com/MiSTerOrganize/MiSTer_PICO-8),
+it's a hybrid: a CPU runs a PICO-8 emulator (Lua VM), and the FPGA does the
+video and audio output. The Game Bub has no application processor (its MCU, an
+ESP32-S3, is busy with the UI and has too little RAM), so the CPU is a RISC-V
+soft core in the FPGA:
+
+```
+ ESP32-S3 (menu, SD card) ──QSPI──▶ FPGA (XC7A100T)
+   loads pico8.bin, cart,           ┌────────────────────────────────────┐
+   save file                        │ VexRiscv RV32IMC @ 90.9 MHz        │
+                                    │   16 KiB I$ / 16 KiB D$            │
+                                    │   fake-08 + z8lua, from SDRAM      │
+                                    │        │                           │
+                                    │        ▼ 128x128 4bpp + palette    │
+                                    │ framebuffer (double buffered) ─────┼─▶ framework
+                                    │ audio FIFO (22050 Hz) ─────────────┼─▶ (LCD/HDMI,
+                                    │ SDRAM controller ── 32 MiB SDRAM   │    speakers)
+                                    └────────────────────────────────────┘
+```
+
+* **Emulator**: [fake-08](https://github.com/jtothebell/fake-08) (MIT), with
+  its PICO-8 flavored Lua ([z8lua](https://github.com/jtothebell/z8lua)),
+  compiled for the soft CPU with newlib (`sw/`). The PICO-8 video frame is
+  scaled 3x (384x384) by the framework.
+* **Audio**: fake-08's synthesizer (from zepto8) updates the note state and
+  generates waveforms per sample in floating point, which is ~10x too slow
+  without an FPU. `sw/audio.cpp` reimplements it: note state at a control rate
+  (every 32 samples), waveforms, reverb and filters per sample in fixed point
+  (~2-20% of the CPU time, depending on the channels used). It's compared
+  against the original in `sim/audiocmp/` (per instrument/effect/filter, and
+  whole carts).
+* **CPU**: [VexRiscv](https://github.com/SpinalHDL/VexRiscv) (MIT), generated
+  (`scripts/gen_vexriscv.sh`, output in `hdl/vexriscv/`).
+
+## Install
+
+Requires a rev 4 device and Game Bub firmware with SD card core support (v1.1;
+see the SNES core's notes on
+[v1.1-beta-fork-rc1](https://github.com/danisla/gamebub/releases/tag/v1.1-beta-fork-rc1)).
+
+Copy `dist/cores/PICO-8/` (see Build) to `/cores/PICO-8/` on the SD card:
+`core.json`, `files.json`, `settings.json`, `pico8_rev4.bit` and `pico8.bin`.
+PICO-8 then appears in the core list. Carts are `.p8` or `.p8.png` files; cart
+data (`cartdata()`) is saved next to the cart as `.p8d`.
+
+Controls: D-pad, B = O, A = X (Y and X also work), Start = pause menu.
+
+## Layout
+
+* `hdl/`: the SoC (SystemVerilog):
+  * `pico8_soc.sv`: CPU, bus, block RAM, framebuffer, audio FIFO, I/O
+    registers, host access.
+  * `pico8_sdram.sv`: SDRAM controller (cache line bursts, byte masks).
+  * `pico8_gamebub.sv`: wrapper for the Chisel core.
+  * `pico8.xdc`: constraints (SDRAM I/O timing, as in the SNES core).
+  * `vexriscv/`: generated CPU.
+* `src/main/scala/pico8/`: the Chisel core (clocks, host interface, commands).
+* `core/PICO-8/`: SD card core definition.
+* `sw/`: the CPU program: startup, system calls (RAM file system, save
+  buffer), the fake-08 platform layer (`gamebub.cpp`), audio (`audio.cpp`).
+* `sim/`: Verilator simulations:
+  * `sim/`: the SoC with an SDRAM model; runs `pico8.bin` with a cart, dumps
+    frames (PPM) and audio (WAV). `sim/hwtest/`: bare-metal hardware test.
+  * `sim/host/`: the generated Chisel core, driven like the firmware (file
+    loading, commands, save readback).
+  * `sim/audiocmp/`: native builds of fake-08 with the original and the fixed
+    point audio, and comparison scripts.
+* `nix/`: RISC-V toolchain (`toolchain.nix`) and a Vivado FHS environment for
+  NixOS (`vivado-fhs.nix`).
+* `third_party/`: fake-08 and pythondata-cpu-vexriscv (clones).
+
+## Memory maps
+
+CPU:
+
+| Address       | Size   | |
+|---------------|--------|-|
+| `0x0000_0000` | 8 MiB  | SDRAM: program image (loaded by the host) |
+| `0x0080_0000` | 23 MiB | SDRAM: data, bss, stack, heap |
+| `0x01F0_0000` | 1 MiB  | SDRAM: cart (loaded by the host) |
+| `0x1000_0000` | 64 KiB | block RAM |
+| `0xF000_0000` |        | I/O registers (`sw/hw.h`) |
+| `0xF001_0000` | 8 KiB  | framebuffer back buffer (write only) |
+| `0xF002_0000` | 4 KiB  | save buffer |
+
+Host (`files.json`): `0x1xxx_xxxx` program, `0x2xxx_xxxx` cart, `0x4xxx_xxxx`
+save buffer, `0x0000_xxxx` registers (`0x2000`: reset).
+
+## Build
+
+Requires nix (for the RISC-V toolchain and Verilator), Vivado 2026.1 in
+`~/Xilinx`, Java and Python 3.
+
+```
+git submodule update --init --recursive third_party/fake-08
+git submodule update --init third_party/pythondata-cpu-vexriscv  # only to regenerate the CPU
+
+# RISC-V toolchain (rv32imc, ilp32; builds GCC from source, ~15 min)
+nix build --impure -f nix/toolchain.nix -o nix/result-toolchain
+
+# CPU program -> sw/build/pico8.bin
+make -C sw
+
+# Bitstream (on NixOS, inside the Vivado FHS environment)
+python3 scripts/prepare_rtl.py
+$(nix build --impure -f nix/vivado-fhs.nix --print-out-paths --no-link)/bin/vivado-env \
+    -c "./framework/mill --no-daemon root.buildCore --target gamebub_rev4"
+
+# SD card folder -> dist/cores/PICO-8/ (and dist/pico8-gamebub.zip)
+./scripts/package.sh
+```
+
+Simulation:
+
+```
+cd sim && nix shell nixpkgs#verilator nixpkgs#gcc nixpkgs#gnumake nixpkgs#perl -c make
+./obj_dir/Vsim_top --frames 300 --dump-every 60 --press 120:10:10 ../sw/build/pico8.bin cart.p8.png
+python3 ppm2png.py out/last.ppm out/last.png 3
+```
+
+The simulation runs at ~2.8 MHz (about 30x slower than real time).
+
+## Status
+
+* Simulated end to end: the host interface (file loading, commands, save
+  readback) with the generated core, and fake-08 running carts on the soft
+  CPU. Timing is met at 90.9 MHz. Not yet tested on hardware.
+* Performance (percent of the 60 Hz frame time, measured on the CPU's cycle
+  counter; the device matches the simulation):
+
+  | Cart                          | VM (update + draw) | Audio | |
+  |-------------------------------|------|-----|-------------------------|
+  | Beckon the Hellspawn (gameplay) | ~62% | ~19% | full speed (was ~1/5) |
+  | Celeste                       | ~43% | 2%  | full speed              |
+  | Dinky Kong                    | ~300% | ~70% | slow (measured before the latest optimizations) |
+
+  Heavy carts are limited by the Lua VM on the soft CPU (~90 MHz, single
+  issue). The CPU's critical path is inside VexRiscv (I$ tags to the
+  compressed instruction decoder).
+* Cart data (`cartdata()`) is saved when it changes (fake-08 only saves it
+  when a cart is closed, and the core is simply stopped by the host).
+
+Design notes:
+* The CPU's data cache is write-through, so the SDRAM controller keeps rows
+  open (a word write to an open row takes 2 cycles).
+* `sw/fake08.patch`: changes to fake-08 (applied to a copy in `sw/build/`,
+  regenerate with `scripts/make_fake08_patch.sh`): integer `fix32` <-> double
+  conversions (used for every PICO-8 API argument), `Vm::flushCartData()`,
+  faster `map()`/`mget()` (cached map geometry, only visible cells),
+  pattern-filled spans and `circfill` (each row drawn once), computed goto
+  dispatch in the Lua VM (`Z8_COMPUTED_GOTO`), and a fixed string hash seed
+  for tests (`Z8_FIXED_SEED`). Graphics changes are checked for identical
+  output with the native builds in `sim/audiocmp/`.
+* Lua errors and coroutine yields use setjmp/longjmp (`LUA_USE_LONGJMP`)
+  instead of C++ exceptions (fake-08 yields every frame).
+* New button presses are kept until the cart reads the buttons (30 fps carts
+  read them every other frame).
+* The host sends files as 32-bit words, so the last 1-3 bytes of a file whose
+  size isn't a multiple of 4 are lost; the core restores the end of PNG carts
+  (see `firmware-pad-partial-word.patch` for a firmware fix).
+* The console output is saved as `<cart>.p8.log` next to the cart (the Log
+  file in `files.json`).
+* Misaligned loads/stores (VexRiscv traps on them) are emulated in the trap
+  handler.
+
+Not supported: splore / BBS, multicarts (`load()` of other carts), mouse and
+keyboard, save states.
+
+## License
+
+Not chosen yet. Components: the Game Bub framework (`framework/`,
+CERN-OHL-S-2.0), fake-08 and z8lua (MIT), `sw/audio.cpp` (derived from fake-08
+and zepto8, MIT / WTFPL), VexRiscv (MIT), newlib and libstdc++ (linked into
+`pico8.bin`).
