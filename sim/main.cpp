@@ -23,8 +23,9 @@
 #include "Vsim_top__Syms.h"
 #include "Vsim_top_sdram_model.h"
 #include "Vsim_top_sim_top.h"
-#include "Vsim_top_pico8_soc.h"
+#ifndef PICO8_VEXII
 #include "Vsim_top_VexRiscv.h"
+#endif
 #include <map>
 #include "verilated.h"
 
@@ -189,7 +190,9 @@ int main(int argc, char **argv) {
     uint64_t audioPhase = 0;
     std::map<uint32_t, uint64_t> profile;
     auto *soc = top->rootp->vlSymsp->TOP__sim_top.soc;
-    auto *cpu = soc->cpu;
+#ifndef PICO8_VEXII
+    auto *cpu = soc->vex__DOT__cpu;
+#endif
     uint64_t profileCycles = 0, sdramBusy[4] = {}, sdramWriteBusy = 0, writeRequests = 0;
     while (!Verilated::gotFinish() && frames < maxFrames) {
         if (top->sdram_ready && top->cpu_reset) {
@@ -206,7 +209,9 @@ int main(int argc, char **argv) {
         tick();
         cycle++;
         if (profileFrom >= 0 && frames >= profileFrom) {
+#ifndef PICO8_VEXII
             if (cycle % 997 == 0) profile[cpu->lastStagePc]++;
+#endif
             // SDRAM use by master (arbiter state != idle): 0 = data bus, 1 = instruction bus, 2 = host
             profileCycles++;
             if (soc->arb_state != 0) sdramBusy[soc->arb_master & 3]++;
@@ -262,6 +267,9 @@ int main(int argc, char **argv) {
             100.0 * sdramBusy[0] / profileCycles, 100.0 * sdramBusy[1] / profileCycles,
             (unsigned long)profileCycles);
         printf("[sim] of which data bus writes: %.1f%%\n", 100.0 * sdramWriteBusy / profileCycles);
+    }
+    if (getenv("ARB_DEBUG")) {
+        printf("[sim] arbiter state %d master %d write %d\n", (int)soc->arb_state, (int)soc->arb_master, (int)soc->sd_req_write);
     }
     writePpm(outDir + "/last.ppm", frame);
     writeWav(outDir + "/audio.wav", audio);

@@ -14,11 +14,16 @@ object HandheldPico8 {
   /** MMCM VCO frequency: 1000 MHz (50 MHz * 20). */
   val mmcmVcoHz = 1_000_000_000.0
   /**
-   * System clock (CPU, SDRAM): 90.9 MHz. (The CPU and SDRAM meet timing at
-   * 100 MHz, but the framework's audio sampling logic, clocked by the system
-   * clock, doesn't.)
+   * CPU: 0 = VexRiscv, 1 = VexiiRiscv, 2 = dual issue VexiiRiscv (must match
+   * hdl/vexiiriscv/VexiiRiscv.v).
    */
-  val systemDivider = 11
+  val cpuVexii = 1
+  /**
+   * System clock (CPU, SDRAM): 90.9 MHz, 76.9 MHz with dual issue VexiiRiscv
+   * (its critical path is ~13 ns). (The framework's audio sampling logic,
+   * clocked by the system clock, limits it to ~93 MHz.)
+   */
+  val systemDivider = if (cpuVexii == 2) 13 else 11
   /** Host SPI clock: 200 MHz. */
   val spiDivider = 5
 
@@ -164,6 +169,7 @@ class HandheldPico8 extends Module with Core {
   bindExtModule("Pico8Gamebub", pico8, Map(
     "CLOCK_HZ" -> IntParam(clockSystemHz),
     "FRAME_CLOCKS" -> IntParam(frameClocks),
+    "CPU_VEXII" -> IntParam(cpuVexii),
   ))
   pico8.clockSdramOut := mmcm.io.clockOuts(3)
   pico8.focus := regCoreFocus

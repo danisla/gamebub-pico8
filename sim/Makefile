@@ -25,3 +25,20 @@ clean:
 	rm -rf obj_dir out
 
 .PHONY: run clean
+
+# The SoC with VexiiRiscv instead of VexRiscv: obj_dir_vexii/Vsim_top
+# VexiiRiscv lanes (hdl/vexiiriscv/VexiiRiscv.v must match) and clock.
+VEXII_LANES ?= 1
+VEXII_CLOCK_HZ ?= 90909090
+VEXII_DIR ?= obj_dir_vexii
+VEXII_SOURCES := sim_top.sv sdram_model.sv \
+	$(ROOT)/hdl/pico8_soc.sv $(ROOT)/hdl/pico8_sdram.sv $(ROOT)/hdl/vexii_adapter.sv $(ROOT)/hdl/vexiiriscv/VexiiRiscv.v
+
+$(VEXII_DIR)/Vsim_top: $(VEXII_SOURCES) main.cpp
+	$(VERILATOR) --cc --exe --build -j 0 -O3 --x-assign fast --x-initial fast --Mdir $(VEXII_DIR) \
+		-DPICO8_VEXII=$(VEXII_LANES) -Wno-fatal -Wno-WIDTHEXPAND -Wno-WIDTHTRUNC -Wno-UNUSEDSIGNAL -Wno-PINCONNECTEMPTY \
+		-Wno-TIMESCALEMOD -Wno-CASEINCOMPLETE -Wno-UNOPTFLAT -Wno-MULTIDRIVEN \
+		--top-module sim_top -GCLOCK_HZ=$(VEXII_CLOCK_HZ) -CFLAGS "-O2 -std=c++17 -DPICO8_VEXII" \
+		$(VEXII_SOURCES) main.cpp
+
+vexii: $(VEXII_DIR)/Vsim_top

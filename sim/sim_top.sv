@@ -25,7 +25,12 @@ module sim_top #(
 	logic [1:0]  dqm, ba;
 	logic        cs_n, ras_n, cas_n, we_n, cke, sdram_clk;
 
-	pico8_soc #(.CLOCK_HZ(CLOCK_HZ)) soc (
+`ifdef PICO8_VEXII
+	localparam int CPU_VEXII = `PICO8_VEXII;
+`else
+	localparam int CPU_VEXII = 0;
+`endif
+	pico8_soc #(.CLOCK_HZ(CLOCK_HZ), .CPU_VEXII(CPU_VEXII)) soc (
 		.clk(clk),
 		.clk_sdram_out(clk),
 		.reset(reset),

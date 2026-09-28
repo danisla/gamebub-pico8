@@ -40,3 +40,4 @@ __pycache__
 /sim/audiocmp/draw_fast
 /sim/audiocmp/draw_slow
 /sim/audiocmp/nofast-*
+/sim/obj_dir_vexii*

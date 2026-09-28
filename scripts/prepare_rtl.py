@@ -19,6 +19,8 @@ SOURCES = [
     "pico8_sdram.sv",
     "pico8.xdc",
     "vexriscv/VexRiscv_Pico8.v",
+    "vexii_adapter.sv",
+    "vexiiriscv/VexiiRiscv.v",
 ]
 
 

@@ -9,8 +9,8 @@
 // * Open page policy: each bank keeps its last row open (until a different row
 //   is needed, or a refresh). The CPU's data cache is write-through, so most
 //   accesses are word writes, which take 2 cycles when their row is open.
-// * A line read is two READ commands (columns c and c+8), giving 16
-//   consecutive halfwords.
+// * A line read is LINE_WORDS / 4 back to back READ commands (columns c,
+//   c+8, ...), giving 2 * LINE_WORDS consecutive halfwords.
 // * A word read (non-line, host only) is one READ; the remaining beats are
 //   discarded.
 // * A word write is two WRITE commands.
@@ -21,7 +21,9 @@
 // READ command is registered on the pins (CL2).
 //
 module pico8_sdram #(
-	parameter int CLOCK_HZ = 100_000_000
+	parameter int CLOCK_HZ = 100_000_000,
+	/// Words (32 bits) in a line read: 8 or 16.
+	parameter int LINE_WORDS = 8
 ) (
 	input  logic        clk,
 	input  logic        clk_out,   // clk, phase shifted, forwarded to the SDRAM
@@ -31,12 +33,12 @@ module pico8_sdram #(
 	input  logic        req_valid,
 	output logic        req_ready,
 	input  logic        req_write,
-	input  logic        req_line,  // read 8 words starting at req_addr (line aligned)
+	input  logic        req_line,  // read LINE_WORDS words starting at req_addr (line aligned)
 	input  logic [24:2] req_addr,  // word address
 	input  logic [31:0] req_wdata,
 	input  logic [3:0]  req_wsel,
 
-	// Read data (1 word for a word read, 8 for a line read)
+	// Read data (1 word for a word read, LINE_WORDS for a line read)
 	output logic        rd_valid,
 	output logic [31:0] rd_data,
 	output logic        rd_last,
@@ -95,7 +97,7 @@ module pico8_sdram #(
 		S_IDLE,
 		S_PRECHARGE,    // wait for the bank to be precharged, then activate
 		S_ACTIVE,       // wait for the row to be active, then read/write
-		S_READ2,        // second READ of a line
+		S_READ2,        // further READs of a line (each 8 halfwords)
 		S_READ_WAIT,    // wait for the read burst (on the pins) to end
 		S_WRITE2,
 		S_REFRESH_PRE,  // precharging all banks for a refresh
@@ -136,7 +138,9 @@ module pico8_sdram #(
 	localparam int PIPE = CAPTURE;
 	logic [PIPE-1:0] beat_pipe;
 	logic            beat_start;    // a READ is issued this cycle
-	logic [3:0]      beats_left;    // kept beats left to issue for the current read
+	logic [5:0]      beats_left;    // kept beats left to issue for the current read
+	localparam int LINE_READS = LINE_WORDS / 4;   // READ commands (bursts of 8 halfwords) per line
+	logic [2:0]      reads_left;    // further READ commands for the current line
 	logic            reading;       // read data may still be on the bus
 	assign reading = beats_left != 0 || beat_pipe != 0;
 
@@ -248,6 +252,7 @@ module pico8_sdram #(
 								SDRAM_DQM <= 2'b00;
 								beat_start <= 1'b1;
 								timer <= 18'd7;
+								reads_left <= 3'(LINE_READS - 1);
 								state <= (req_line && !req_write) ? S_READ2 : S_READ_WAIT;
 							end
 						end else if (bank_open[req_bank]) begin
@@ -300,16 +305,19 @@ module pico8_sdram #(
 						SDRAM_DQM <= 2'b00;
 						beat_start <= 1'b1;
 						timer <= 18'd7;
+						reads_left <= 3'(LINE_READS - 1);
 						state <= r_line ? S_READ2 : S_READ_WAIT;
 					end
 				end
 
 				S_READ2: if (timer == 0) begin
-					// Second READ right after the first burst of 8.
+					// Next READ right after the previous burst of 8.
 					cmd <= CMD_READ;
 					SDRAM_A <= {4'b0000, r_col + 9'd8};
+					r_col <= r_col + 9'd8;
 					timer <= 18'd7;
-					state <= S_READ_WAIT;
+					reads_left <= reads_left - 1'b1;
+					if (reads_left == 3'd1) state <= S_READ_WAIT;
 				end
 
 				S_READ_WAIT: if (timer == 0) begin
@@ -359,7 +367,7 @@ module pico8_sdram #(
 			beats_left <= '0;
 			beat_pipe <= '0;
 		end else begin
-			if (beat_start) beats_left <= r_line ? 4'd15 : 4'd1;
+			if (beat_start) beats_left <= r_line ? 6'(2 * LINE_WORDS - 1) : 6'd1;
 			else if (beats_left != 0) beats_left <= beats_left - 1'b1;
 			beat_pipe <= {beat_pipe[PIPE-2:0], beat_start || beats_left != 0};
 		end
@@ -374,7 +382,7 @@ module pico8_sdram #(
 
 	logic        half;       // low halfword received
 	logic [15:0] low;
-	logic [2:0]  word_count;
+	logic [3:0]  word_count;
 	logic        cur_line;   // the read being received is a line read
 	always_ff @(posedge clk) begin
 		rd_valid <= 1'b0;
@@ -389,8 +397,8 @@ module pico8_sdram #(
 			end else begin
 				rd_valid <= 1'b1;
 				rd_data <= {rbuf, low};
-				rd_last <= !cur_line || word_count == 3'd7;
-				word_count <= cur_line ? word_count + 1'b1 : 3'd0;
+				rd_last <= !cur_line || word_count == 4'(LINE_WORDS - 1);
+				word_count <= (cur_line && word_count != 4'(LINE_WORDS - 1)) ? word_count + 1'b1 : 4'd0;
 			end
 		end
 	end

@@ -19,11 +19,13 @@
 // is held in reset.
 //
 module pico8_soc #(
-	parameter int CLOCK_HZ = 100_000_000,
+	parameter int CLOCK_HZ = 90_909_090,
 	/// Clock cycles per video frame
 	parameter int FRAME_CLOCKS = CLOCK_HZ / 60,
 	/// Audio sample rate
-	parameter int AUDIO_HZ = 22050
+	parameter int AUDIO_HZ = 22050,
+	/// CPU: 0 = VexRiscv, 1 = VexiiRiscv, 2 = dual issue VexiiRiscv
+	parameter int CPU_VEXII = 1
 ) (
 	input  logic        clk,
 	input  logic        clk_sdram_out,
@@ -111,36 +113,70 @@ module pico8_soc #(
 	logic cpu_rst;
 	always_ff @(posedge clk) cpu_rst <= reset || cpu_reset || !sdram_ready;
 
-	VexRiscv cpu (
-		.clk(clk),
-		.reset(cpu_rst),
-		.externalResetVector(32'h0000_0000),
-		.timerInterrupt(1'b0),
-		.softwareInterrupt(1'b0),
-		.externalInterruptArray(32'h0),
-		.iBusWishbone_CYC(ibus_cyc),
-		.iBusWishbone_STB(ibus_stb),
-		.iBusWishbone_ACK(ibus_ack),
-		.iBusWishbone_WE(ibus_we),
-		.iBusWishbone_ADR(ibus_adr),
-		.iBusWishbone_DAT_MISO(ibus_dat_r),
-		.iBusWishbone_DAT_MOSI(ibus_dat_w),
-		.iBusWishbone_SEL(ibus_sel),
-		.iBusWishbone_ERR(ibus_err),
-		.iBusWishbone_CTI(ibus_cti),
-		.iBusWishbone_BTE(ibus_bte),
-		.dBusWishbone_CYC(dbus_cyc),
-		.dBusWishbone_STB(dbus_stb),
-		.dBusWishbone_ACK(dbus_ack),
-		.dBusWishbone_WE(dbus_we),
-		.dBusWishbone_ADR(dbus_adr),
-		.dBusWishbone_DAT_MISO(dbus_dat_r),
-		.dBusWishbone_DAT_MOSI(dbus_dat_w),
-		.dBusWishbone_SEL(dbus_sel),
-		.dBusWishbone_ERR(dbus_err),
-		.dBusWishbone_CTI(dbus_cti),
-		.dBusWishbone_BTE(dbus_bte)
-	);
+	// VexiiRiscv: dual issue, write back data cache, 64 byte lines.
+	// VexRiscv: 32 byte lines.
+	localparam int LINE_WORDS = CPU_VEXII ? 16 : 8;
+	generate
+		if (CPU_VEXII) begin : vexii
+			VexiiAdapter #(.FETCH64(CPU_VEXII == 2)) cpu (
+			.clk(clk),
+			.reset(cpu_rst),
+			.iBusWishbone_CYC(ibus_cyc),
+			.iBusWishbone_STB(ibus_stb),
+			.iBusWishbone_ACK(ibus_ack),
+			.iBusWishbone_WE(ibus_we),
+			.iBusWishbone_ADR(ibus_adr),
+			.iBusWishbone_DAT_MISO(ibus_dat_r),
+			.iBusWishbone_DAT_MOSI(ibus_dat_w),
+			.iBusWishbone_SEL(ibus_sel),
+			.iBusWishbone_ERR(ibus_err),
+			.iBusWishbone_CTI(ibus_cti),
+			.iBusWishbone_BTE(ibus_bte),
+			.dBusWishbone_CYC(dbus_cyc),
+			.dBusWishbone_STB(dbus_stb),
+			.dBusWishbone_ACK(dbus_ack),
+			.dBusWishbone_WE(dbus_we),
+			.dBusWishbone_ADR(dbus_adr),
+			.dBusWishbone_DAT_MISO(dbus_dat_r),
+			.dBusWishbone_DAT_MOSI(dbus_dat_w),
+			.dBusWishbone_SEL(dbus_sel),
+			.dBusWishbone_ERR(dbus_err),
+			.dBusWishbone_CTI(dbus_cti),
+			.dBusWishbone_BTE(dbus_bte)
+		);
+		end else begin : vex
+			VexRiscv cpu (
+			.clk(clk),
+			.reset(cpu_rst),
+			.externalResetVector(32'h0000_0000),
+			.timerInterrupt(1'b0),
+			.softwareInterrupt(1'b0),
+			.externalInterruptArray(32'h0),
+			.iBusWishbone_CYC(ibus_cyc),
+			.iBusWishbone_STB(ibus_stb),
+			.iBusWishbone_ACK(ibus_ack),
+			.iBusWishbone_WE(ibus_we),
+			.iBusWishbone_ADR(ibus_adr),
+			.iBusWishbone_DAT_MISO(ibus_dat_r),
+			.iBusWishbone_DAT_MOSI(ibus_dat_w),
+			.iBusWishbone_SEL(ibus_sel),
+			.iBusWishbone_ERR(ibus_err),
+			.iBusWishbone_CTI(ibus_cti),
+			.iBusWishbone_BTE(ibus_bte),
+			.dBusWishbone_CYC(dbus_cyc),
+			.dBusWishbone_STB(dbus_stb),
+			.dBusWishbone_ACK(dbus_ack),
+			.dBusWishbone_WE(dbus_we),
+			.dBusWishbone_ADR(dbus_adr),
+			.dBusWishbone_DAT_MISO(dbus_dat_r),
+			.dBusWishbone_DAT_MOSI(dbus_dat_w),
+			.dBusWishbone_SEL(dbus_sel),
+			.dBusWishbone_ERR(dbus_err),
+			.dBusWishbone_CTI(dbus_cti),
+			.dBusWishbone_BTE(dbus_bte)
+		);
+		end
+	endgenerate
 
 	// Address decoding (by the top 4 address bits)
 	wire [3:0] ibus_region = ibus_adr[29:26];
@@ -175,7 +211,7 @@ module pico8_soc #(
 	logic        sd_rd_valid, sd_rd_last;
 	logic [31:0] sd_rd_data;
 
-	pico8_sdram #(.CLOCK_HZ(CLOCK_HZ)) sdram (
+	pico8_sdram #(.CLOCK_HZ(CLOCK_HZ), .LINE_WORDS(LINE_WORDS)) sdram (
 		.clk(clk),
 		.clk_out(clk_sdram_out),
 		.reset(reset),

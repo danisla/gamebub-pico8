@@ -2,7 +2,9 @@
 // HandheldPico8 core's Pico8IO bundle.
 module Pico8Gamebub #(
     parameter int CLOCK_HZ = 100_000_000,
-    parameter int FRAME_CLOCKS = CLOCK_HZ / 60
+    parameter int FRAME_CLOCKS = CLOCK_HZ / 60,
+    /// CPU: 0 = VexRiscv, 1 = VexiiRiscv
+    parameter int CPU_VEXII = 1
 ) (
     input  logic        clock,
     input  logic        reset,
@@ -62,7 +64,8 @@ module Pico8Gamebub #(
 
     pico8_soc #(
         .CLOCK_HZ(CLOCK_HZ),
-        .FRAME_CLOCKS(FRAME_CLOCKS)
+        .FRAME_CLOCKS(FRAME_CLOCKS),
+        .CPU_VEXII(CPU_VEXII)
     ) soc (
         .clk(clock),
         .clk_sdram_out(clockSdramOut),
