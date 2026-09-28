@@ -44,9 +44,10 @@ soft core in the FPGA:
 
 ## Install
 
-Requires a rev 4 device and Game Bub firmware with SD card core support (v1.1;
-see the SNES core's notes on
-[v1.1-beta-fork-rc1](https://github.com/danisla/gamebub/releases/tag/v1.1-beta-fork-rc1)).
+Requires a rev 4 device with Game Bub firmware v1.1-beta2 or later (the
+first official firmware that lists SD card cores).
+The v1.1-beta2 firmware (`gamebub-rev4_v1.1-beta2.uf2`) is attached to the
+[latest release](https://github.com/danisla/gamebub-pico8/releases/latest).
 
 Download `pico8-gamebub.zip` from the
 [releases](https://github.com/danisla/gamebub-pico8/releases) (or build it,
