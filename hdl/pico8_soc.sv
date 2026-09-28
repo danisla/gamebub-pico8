@@ -65,6 +65,12 @@ module pico8_soc #(
 
 	output logic        sdram_ready,
 
+	// Dynamic phase shift of clk_sdram_out (MMCM fine phase shift, clocked
+	// by clk): a psen pulse moves it by 1/56 of the VCO period, done by psdone.
+	output logic        sdram_psen,
+	output logic        sdram_psincdec,
+	input  logic        sdram_psdone,
+
 	// Video
 	output logic        pixel_valid,
 	output logic [7:0]  pixel_r,
@@ -110,8 +116,12 @@ module pico8_soc #(
 	logic [2:0]  dbus_cti;
 	logic [1:0]  dbus_bte;
 
+	// The CPU starts after the SDRAM's first initialization (not held in
+	// reset by a reinit, see REG_SDRAM_CFG).
+	logic sdram_started;
+	always_ff @(posedge clk) sdram_started <= reset ? 1'b0 : sdram_started || sdram_ready;
 	logic cpu_rst;
-	always_ff @(posedge clk) cpu_rst <= reset || cpu_reset || !sdram_ready;
+	always_ff @(posedge clk) cpu_rst <= reset || cpu_reset || !sdram_started;
 
 	// VexiiRiscv: dual issue, write back data cache, 64 byte lines.
 	// VexRiscv: 32 byte lines.
@@ -211,6 +221,16 @@ module pico8_soc #(
 	logic        sd_rd_valid, sd_rd_last;
 	logic [31:0] sd_rd_data;
 
+	// SDRAM test controls (sw/clocktest): configuration, reinit, clock phase
+	// (registers at 0x0040, 0x0044).
+	logic        sdram_cfg_cl3;
+	logic [1:0]  sdram_cfg_capture_extra;
+	logic        sdram_reinit;
+	logic        sdram_reinit_pending;  // requested, waiting for the SDRAM to be idle
+	logic        sdram_idle;
+	logic        ps_busy;
+	logic [15:0] ps_position;   // phase steps from the static phase (signed)
+
 	pico8_sdram #(.CLOCK_HZ(CLOCK_HZ), .LINE_WORDS(LINE_WORDS)) sdram (
 		.clk(clk),
 		.clk_out(clk_sdram_out),
@@ -226,6 +246,10 @@ module pico8_soc #(
 		.rd_data(sd_rd_data),
 		.rd_last(sd_rd_last),
 		.init_done(sdram_ready),
+		.cfg_cl3(sdram_cfg_cl3),
+		.cfg_capture_extra(sdram_cfg_capture_extra),
+		.reinit(sdram_reinit),
+		.idle(sdram_idle),
 		.*
 	);
 
@@ -407,6 +431,39 @@ module pico8_soc #(
 	end
 	wire sim_exit_write = io_write && io_block == 4'h0 && io_addr == 16'h002C;
 
+	// SDRAM test controls (declared with the SDRAM controller).
+	always_ff @(posedge clk) begin
+		sdram_reinit <= 1'b0;
+		sdram_psen <= 1'b0;
+		if (reset) begin
+			sdram_reinit_pending <= 1'b0;
+			sdram_cfg_cl3 <= 1'b0;
+			sdram_cfg_capture_extra <= '0;
+			ps_busy <= 1'b0;
+			ps_position <= '0;
+			sdram_psincdec <= 1'b0;
+		end else begin
+			if (io_write && io_block == 4'h0 && io_addr == 16'h0040) begin
+				sdram_cfg_cl3 <= dbus_dat_w[0];
+				sdram_cfg_capture_extra <= dbus_dat_w[2:1];
+				if (dbus_dat_w[31]) sdram_reinit_pending <= 1'b1;
+			end
+			// No request is registered in A_IDLE (a new one reaches the
+			// controller the next cycle, and waits for the initialization).
+			if (sdram_reinit_pending && arb_state == A_IDLE && sdram_idle && !sdram_reinit) begin
+				sdram_reinit <= 1'b1;
+				sdram_reinit_pending <= 1'b0;
+			end
+			if (io_write && io_block == 4'h0 && io_addr == 16'h0044 && !ps_busy) begin
+				sdram_psen <= 1'b1;
+				sdram_psincdec <= dbus_dat_w[0];
+				ps_busy <= 1'b1;
+				ps_position <= dbus_dat_w[0] ? ps_position + 1'b1 : ps_position - 1'b1;
+			end
+			if (sdram_psdone) ps_busy <= 1'b0;
+		end
+	end
+
 	always_ff @(posedge clk) begin
 		if (reset) begin
 			flip_pending <= 1'b0;
@@ -450,6 +507,9 @@ module pico8_soc #(
 				16'h0020: io_rdata <= {30'b0, front, flip_pending};
 				16'h0024: io_rdata <= 32'(audio_count);
 				16'h0030: io_rdata <= {20'b0, save_size};
+				16'h0040: io_rdata <= {1'b0, sdram_ready && !sdram_reinit_pending && !sdram_reinit, 27'b0,
+					sdram_cfg_capture_extra, sdram_cfg_cl3};
+				16'h0044: io_rdata <= {ps_position, 15'b0, ps_busy};
 				default: io_rdata <= '0;
 			endcase
 		end

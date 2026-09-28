@@ -17,8 +17,13 @@
 //
 // The command/address/data outputs are registered (packed into the IOBs, see
 // pico8.xdc). The SDRAM clock is forwarded from a phase shifted copy of `clk`
-// (as in the Game Bub SNES core), and read data is captured 3 cycles after a
-// READ command is registered on the pins (CL2).
+// (as in the Game Bub SNES core), and read data is captured CL + 1 cycles
+// after a READ command is registered on the pins.
+//
+// For testing the timing on hardware (sw/clocktest), the CAS latency (2 or 3)
+// and extra capture delay (0-2 cycles) can be changed at run time, taking
+// effect when the SDRAM is initialized again (`reinit`, which loses the SDRAM
+// contents).
 //
 module pico8_sdram #(
 	parameter int CLOCK_HZ = 100_000_000,
@@ -44,6 +49,12 @@ module pico8_sdram #(
 	output logic        rd_last,
 
 	output logic        init_done,
+
+	// Run time configuration (applied by `reinit`)
+	input  logic        cfg_cl3,          // CAS latency 3 (else 2)
+	input  logic [1:0]  cfg_capture_extra, // extra read capture delay (cycles)
+	input  logic        reinit,           // pulse: initialize the SDRAM again
+	output logic        idle,             // no command or read in progress (reinit is safe)
 
 	// SDRAM
 	input  logic [15:0] SDRAM_DQ_IN,
@@ -74,12 +85,14 @@ module pico8_sdram #(
 	localparam int T_WR   = cycles(15.0) + 1;   // write recovery (last write to precharge)
 	localparam int T_MRD  = 3;                  // mode register set
 	localparam int T_REFI = int'(7_500.0 / CLOCK_NS); // refresh interval (8192 rows / 64 ms, less margin)
-	localparam int CAS_LATENCY = 2;
-	// Cycles after the READ command is on the pins that the first beat is in rbuf.
-	localparam int CAPTURE = CAS_LATENCY + 1;
+	// Cycles after the READ command is on the pins that the first beat is in
+	// rbuf: CL + 1 (+ extra), set on (re)initialization.
+	logic       cl3;
+	logic [2:0] capture;
+	localparam int CAPTURE_MAX = 3 + 1 + 3;
 
-	// Burst length 8, sequential, CL2, single location write.
-	localparam logic [12:0] MODE = {3'b000, 1'b1, 2'b00, 3'(CAS_LATENCY), 1'b0, 3'b011};
+	// Burst length 8, sequential, CL2/3, single location write.
+	wire [12:0] MODE = {3'b000, 1'b1, 2'b00, cl3 ? 3'd3 : 3'd2, 1'b0, 3'b011};
 
 	localparam logic [2:0] CMD_NOP       = 3'b111;
 	localparam logic [2:0] CMD_ACTIVE    = 3'b011;
@@ -135,7 +148,7 @@ module pico8_sdram #(
 	assign SDRAM_CKE = 1'b1;
 
 	// Read beat tracking (see beat_pipe below).
-	localparam int PIPE = CAPTURE;
+	localparam int PIPE = CAPTURE_MAX;
 	logic [PIPE-1:0] beat_pipe;
 	logic            beat_start;    // a READ is issued this cycle
 	logic [5:0]      beats_left;    // kept beats left to issue for the current read
@@ -143,6 +156,7 @@ module pico8_sdram #(
 	logic [2:0]      reads_left;    // further READ commands for the current line
 	logic            reading;       // read data may still be on the bus
 	assign reading = beats_left != 0 || beat_pipe != 0;
+	assign idle = state == S_IDLE && !reading;
 
 	wire [1:0]  req_bank = req_addr[24:23];
 	wire [12:0] req_row = req_addr[22:10];
@@ -156,14 +170,17 @@ module pico8_sdram #(
 
 	// Requests are accepted in idle. A write must wait for read data to be off
 	// the bus (DQ turnaround).
-	assign req_ready = state == S_IDLE && init_done && !refresh_pending && !(req_write && reading);
+	assign req_ready = state == S_IDLE && init_done && !refresh_pending && !(req_write && reading) && !reinit;
 
 	always_ff @(posedge clk) begin
 		beat_start <= 1'b0;
-		if (reset) begin
+		if (reset || reinit) begin
+			// (`reinit` must only be pulsed when `idle`, with no request.)
 			state <= S_INIT_WAIT;
 			timer <= 18'(T_INIT);
 			init_done <= 1'b0;
+			cl3 <= reset ? 1'b0 : cfg_cl3;
+			capture <= reset ? 3'd3 : 3'(cfg_cl3 ? 4 : 3) + 3'(cfg_capture_extra);
 			cmd <= CMD_NOP;
 			SDRAM_DQ_OE <= 1'b0;
 			SDRAM_DQM <= 2'b11;
@@ -377,8 +394,8 @@ module pico8_sdram #(
 	(* IOB = "TRUE" *) logic [15:0] rbuf;
 	always_ff @(posedge clk) rbuf <= SDRAM_DQ_IN;
 
-	// The beat is in rbuf CAPTURE cycles after its cycle on the pins.
-	wire beat_valid = beat_pipe[CAPTURE-1];
+	// The beat is in rbuf `capture` cycles after its cycle on the pins.
+	wire beat_valid = beat_pipe[capture - 3'd1];
 
 	logic        half;       // low halfword received
 	logic [15:0] low;

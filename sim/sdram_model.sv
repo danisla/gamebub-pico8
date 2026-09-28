@@ -2,18 +2,17 @@
 // Behavioral model of a 16-bit SDR SDRAM (32 MiB), for simulation.
 //
 // Commands are sampled on the rising edge of `clk` (the controller's outputs,
-// registered on the previous edge). Read data is driven CAS_LATENCY - 1 edges
-// after the READ edge (valid on the next one), so a controller capturing on
-// the CAS_LATENCY + 1'th edge after it registers READ on the pins gets it, as
-// with the real part and the forwarded clock.
+// registered on the previous edge). Read data is driven CL - 1 edges after
+// the READ edge (valid on the next one), so a controller capturing on the
+// CL + 1'th edge after it registers READ on the pins gets it, as with the real
+// part and the forwarded clock. The CAS latency (2 or 3) is set by the mode
+// register.
 //
 // Supports what pico8_sdram uses: burst length 8 reads (with auto precharge
 // and read interruption), single location writes, byte masks. Row/bank state
 // is checked.
 //
-module sdram_model #(
-	parameter int CAS_LATENCY = 2
-) (
+module sdram_model (
 	input  logic        clk,
 	input  logic [15:0] dq_in,     // from the controller
 	output logic [15:0] dq_out,    // to the controller
@@ -37,6 +36,13 @@ module sdram_model #(
 	logic [8:0]  burst_col;
 	logic        burst_ap;
 	logic        mode_set;
+	logic        cl3;
+	// CL3: a READ starts its burst one edge later.
+	logic        read_delayed;
+	logic [1:0]  delayed_bank;
+	logic [12:0] delayed_row;
+	logic [8:0]  delayed_col;
+	logic        delayed_ap;
 
 	wire [2:0] cmd = {ras_n, cas_n, we_n};
 
@@ -62,10 +68,13 @@ module sdram_model #(
 		for (int i = 0; i < 4; i++) row_open[i] = 1'b0;
 		burst_left = 0;
 		mode_set = 1'b0;
+		cl3 = 1'b0;
+		read_delayed = 1'b0;
 	end
 
 	always_ff @(posedge clk) begin
 		// Output the current read burst.
+		read_delayed <= 1'b0;
 		if (burst_left != 0) begin
 			dq_out <= mem[idx(burst_bank, burst_row, burst_col)];
 			burst_col <= {burst_col[8:3], burst_col[2:0] + 3'd1};
@@ -73,6 +82,15 @@ module sdram_model #(
 			if (burst_left == 1 && burst_ap) row_open[burst_bank] <= 1'b0;
 		end else begin
 			dq_out <= 16'hXXXX;
+		end
+		// (After the burst output, so a delayed READ chained to the end of a
+		// burst replaces it.)
+		if (read_delayed) begin
+			burst_left <= 4'd8;
+			burst_bank <= delayed_bank;
+			burst_row <= delayed_row;
+			burst_col <= delayed_col;
+			burst_ap <= delayed_ap;
 		end
 
 		if (!cs_n) begin
@@ -90,12 +108,21 @@ module sdram_model #(
 					if (!row_open[ba]) $error("[sdram] READ on closed bank %0d", ba);
 					if (now - t_act[ba] < T_RCD) $error("[sdram] tRCD violated (read, bank %0d)", ba);
 					if (!mode_set) $error("[sdram] READ before mode set");
-					// CL2: first beat driven on the next edge.
-					burst_left <= 4'd8;
-					burst_bank <= ba;
-					burst_row <= open_row[ba];
-					burst_col <= a[8:0];
-					burst_ap <= a[10];
+					if (cl3) begin
+						// CL3: first beat driven two edges later.
+						read_delayed <= 1'b1;
+						delayed_bank <= ba;
+						delayed_row <= open_row[ba];
+						delayed_col <= a[8:0];
+						delayed_ap <= a[10];
+					end else begin
+						// CL2: first beat driven on the next edge.
+						burst_left <= 4'd8;
+						burst_bank <= ba;
+						burst_row <= open_row[ba];
+						burst_col <= a[8:0];
+						burst_ap <= a[10];
+					end
 				end
 				CMD_WRITE: begin
 					if (!row_open[ba]) $error("[sdram] WRITE on closed bank %0d", ba);
@@ -126,7 +153,8 @@ module sdram_model #(
 				end
 				CMD_MODE: begin
 					mode_set <= 1'b1;
-					if (a[6:4] != 3'(CAS_LATENCY) || a[2:0] != 3'b011 || a[9] != 1'b1)
+					cl3 <= a[6:4] == 3'd3;
+					if ((a[6:4] != 3'd2 && a[6:4] != 3'd3) || a[2:0] != 3'b011 || a[9] != 1'b1)
 						$error("[sdram] unexpected mode %h", a);
 				end
 				default: ;

@@ -3,7 +3,7 @@
 module Pico8Gamebub #(
     parameter int CLOCK_HZ = 100_000_000,
     parameter int FRAME_CLOCKS = CLOCK_HZ / 60,
-    /// CPU: 0 = VexRiscv, 1 = VexiiRiscv
+    /// CPU: 0 = VexRiscv, 1 = VexiiRiscv, 2 = dual issue VexiiRiscv
     parameter int CPU_VEXII = 1
 ) (
     input  logic        clock,
@@ -37,6 +37,9 @@ module Pico8Gamebub #(
     output logic [14:0] logSize,
 
     output logic        sdramReady,
+    output logic        sdramPsEn,
+    output logic        sdramPsIncDec,
+    input  logic        sdramPsDone,
 
     output logic        pixelValid,
     output logic [7:0]  pixelR,
@@ -93,6 +96,9 @@ module Pico8Gamebub #(
         .host_log_done(hostLogDone),
         .log_size(logSize),
         .sdram_ready(sdramReady),
+        .sdram_psen(sdramPsEn),
+        .sdram_psincdec(sdramPsIncDec),
+        .sdram_psdone(sdramPsDone),
         .pixel_valid(pixelValid),
         .pixel_r(pixelR),
         .pixel_g(pixelG),

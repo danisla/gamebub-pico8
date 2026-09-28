@@ -25,6 +25,12 @@ module sim_top #(
 	logic [1:0]  dqm, ba;
 	logic        cs_n, ras_n, cas_n, we_n, cke, sdram_clk;
 
+	// MMCM phase shift: done 12 cycles after the request (no actual shift).
+	logic        psen, psdone;
+	logic [11:0] ps_pipe = '0;
+	always_ff @(posedge clk) ps_pipe <= {ps_pipe[10:0], psen};
+	assign psdone = ps_pipe[11];
+
 `ifdef PICO8_VEXII
 	localparam int CPU_VEXII = `PICO8_VEXII;
 `else
@@ -57,6 +63,9 @@ module sim_top #(
 		.host_log_done(),
 		.log_size(),
 		.sdram_ready(sdram_ready),
+		.sdram_psen(psen),
+		.sdram_psincdec(),
+		.sdram_psdone(psdone),
 		.pixel_valid(pixel_valid),
 		.pixel_r(pixel_r),
 		.pixel_g(pixel_g),

@@ -18,20 +18,28 @@ object HandheldPico8 {
    * hdl/vexiiriscv/VexiiRiscv.v).
    */
   val cpuVexii = 1
+  /** Build setting from the environment (for test builds, see sw/clocktest). */
+  private def setting(name: String): Option[String] = sys.env.get(name).filter(_.nonEmpty)
   /**
-   * System clock (CPU, SDRAM): 90.9 MHz, 76.9 MHz with dual issue VexiiRiscv
-   * (its critical path is ~13 ns). (The framework's audio sampling logic,
-   * clocked by the system clock, limits it to ~93 MHz.)
+   * System clock (CPU, SDRAM): 111.1 MHz; 90.9 MHz with VexRiscv, 76.9 MHz
+   * with dual issue VexiiRiscv. The limit is the CPU: VexiiRiscv is ~0.25 ns
+   * short of 111.1 MHz in Vivado's (worst case) timing, and was tested on
+   * hardware up to 125 MHz (sw/clocktest). Other builds: PICO8_SYSTEM_DIVIDER
+   * (e.g. 8: 125 MHz, the release's "PICO-8 (125 MHz)" core).
    */
-  val systemDivider = if (cpuVexii == 2) 13 else 11
+  val systemDivider = setting("PICO8_SYSTEM_DIVIDER").map(_.toInt)
+    .getOrElse(cpuVexii match { case 0 => 11; case 1 => 9; case _ => 13 })
   /** Host SPI clock: 200 MHz. */
   val spiDivider = 5
 
   /**
    * Phase (degrees) of the clock forwarded to the SDRAM, relative to the
-   * controller clock (as in the Game Bub SNES core).
+   * controller clock: the center of the working range measured on hardware
+   * with sw/clocktest (about 100-340 degrees at 100-125 MHz, the same in
+   * degrees at each clock). Other builds: PICO8_SDRAM_PHASE. (It can also be
+   * shifted at run time, for testing.)
    */
-  val sdramOutPhase = 270.0
+  val sdramOutPhase = setting("PICO8_SDRAM_PHASE").map(_.toDouble).getOrElse(225.0)
 
   /** File IDs, must match core/PICO-8/files.json. */
   val FileCart = 0
@@ -78,6 +86,9 @@ object HandheldPico8 {
     val logSize = Output(UInt(15.W))
 
     val sdramReady = Output(Bool())
+    val sdramPsEn = Output(Bool())
+    val sdramPsIncDec = Output(Bool())
+    val sdramPsDone = Input(Bool())
 
     val pixelValid = Output(Bool())
     val pixelR = Output(UInt(8.W))
@@ -148,9 +159,11 @@ class HandheldPico8 extends Module with Core {
       (displayDivider, 0.0),          // Display
       (spiDivider, 0.0),              // Host SPI
       (systemDivider, sdramOutPhase), // Forwarded to the SDRAM
-    )
+    ),
+    finePhaseOutput = Some(3),
   ))
   mmcm.io.clockIn := io.clocks.clockIn50M
+  mmcm.io.psClock := mmcm.io.clockOuts(0)
   io.clocks.clockOutSystem := mmcm.io.clockOuts(0)
   io.clocks.clockOutDisplay := mmcm.io.clockOuts(1)
   io.clocks.clockOutSpi := mmcm.io.clockOuts(2)
@@ -172,6 +185,10 @@ class HandheldPico8 extends Module with Core {
     "CPU_VEXII" -> IntParam(cpuVexii),
   ))
   pico8.clockSdramOut := mmcm.io.clockOuts(3)
+  // Dynamic SDRAM clock phase (for testing, see REG_SDRAM_PHASE)
+  mmcm.io.psEn := pico8.sdramPsEn
+  mmcm.io.psIncDec := pico8.sdramPsIncDec
+  pico8.sdramPsDone := mmcm.io.psDone
   pico8.focus := regCoreFocus
   pico8.cartSize := regCartSize
 

@@ -13,7 +13,7 @@ soft core in the FPGA:
 ```
  ESP32-S3 (menu, SD card) ──QSPI──▶ FPGA (XC7A100T)
    loads pico8.bin, cart,           ┌────────────────────────────────────┐
-   save file                        │ VexiiRiscv RV32IMC @ 90.9 MHz      │
+   save file                        │ VexiiRiscv RV32IMC @ 111.1 MHz     │
                                     │   32 KiB I$ / 32 KiB D$            │
                                     │   fake-08 + z8lua, from SDRAM      │
                                     │        │                           │
@@ -41,6 +41,9 @@ soft core in the FPGA:
   `hdl/vexiiriscv/`). [VexRiscv](https://github.com/SpinalHDL/VexRiscv) (MIT,
   `scripts/gen_vexriscv.sh`, `hdl/vexriscv/`) is still selectable
   (`cpuVexii = 0` in `HandheldPico8.scala`).
+* **Clock**: 111.1 MHz (CPU and SDRAM), and 125 MHz in the experimental
+  "PICO-8 (125 MHz)" core. Both were tested on hardware with `sw/clocktest`
+  (see Clock testing).
 
 ## Install
 
@@ -53,7 +56,13 @@ Download `pico8-gamebub.zip` from the
 [releases](https://github.com/danisla/gamebub-pico8/releases) (or build it,
 see Build) and copy its `cores/PICO-8/` to `/cores/PICO-8/` on the SD card:
 `core.json`, `files.json`, `settings.json`, `pico8_rev4.bit` and `pico8.bin`.
-PICO-8 then appears in the core list. Carts are `.p8` or `.p8.png` files; cart
+PICO-8 then appears in the core list.
+
+`cores/PICO-8-Fast/` is the same core at 125 MHz ("PICO-8 (125 MHz,
+experimental)" in the core list, ~12% faster). It worked on a test device,
+but is outside Vivado's worst case timing, so it may fail on other devices or
+when hot (crashes, errors in carts). `extras/` has hardware test programs
+(`memtest`, `clocktest`): they replace `pico8.bin`. Carts are `.p8` or `.p8.png` files; cart
 data (`cartdata()`) is saved next to the cart as `.p8d`.
 
 Controls: D-pad, B = O, A = X (Y and X also work), Start = pause menu.
@@ -79,6 +88,8 @@ Controls: D-pad, B = O, A = X (Y and X also work), Start = pause menu.
     loading, commands, save readback).
   * `sim/audiocmp/`: native builds of fake-08 with the original and the fixed
     point audio, and comparison scripts.
+* `sw/clocktest/`, `sw/memtest/`: hardware test programs (install as
+  `pico8.bin`).
 * `nix/`: RISC-V toolchain (`toolchain.nix`) and a Vivado FHS environment for
   NixOS (`vivado-fhs.nix`).
 * `third_party/`: fake-08, VexiiRiscv and pythondata-cpu-vexriscv
@@ -94,7 +105,7 @@ CPU:
 | `0x0080_0000` | 23 MiB | SDRAM: data, bss, stack, heap |
 | `0x01F0_0000` | 1 MiB  | SDRAM: cart (loaded by the host) |
 | `0x1000_0000` | 64 KiB | block RAM |
-| `0xF000_0000` |        | I/O registers (`sw/hw.h`) |
+| `0xF000_0000` |        | I/O registers (`sw/hw.h`; `0x40`/`0x44`: SDRAM test controls) |
 | `0xF001_0000` | 8 KiB  | framebuffer back buffer (write only) |
 | `0xF002_0000` | 4 KiB  | save buffer |
 
@@ -126,6 +137,18 @@ $(nix build --impure -f nix/vivado-fhs.nix --print-out-paths --no-link)/bin/viva
 ./scripts/package.sh
 ```
 
+The clock (`PICO8_SYSTEM_DIVIDER`, VCO 1000 MHz / divider) and SDRAM clock
+phase (`PICO8_SDRAM_PHASE`, degrees) can be set for a build with environment
+variables. The release is built with:
+
+```
+PICO8_SDRAM_PHASE=225 VIVADO_ENV=... ./scripts/build_clocktest.sh 9 8  # dist/clocktest/
+make -C sw/clocktest
+BIT=dist/clocktest/pico8_rev4_111.1_p225.bit FAST_BIT=dist/clocktest/pico8_rev4_125_p225.bit \
+    FAST_NAME="PICO-8 (125 MHz, experimental)" ./scripts/package.sh
+./scripts/package_clocktest.sh  # dist/pico8-clocktest.zip
+```
+
 Simulation:
 
 ```
@@ -137,23 +160,55 @@ python3 ppm2png.py out/last.ppm out/last.png 3
 
 The simulation runs at ~2.8 MHz (about 30x slower than real time).
 
+## Clock testing
+
+`sw/clocktest/` tests the CPU and SDRAM on hardware, for choosing the clock.
+It runs from block RAM (so SDRAM timing failures can't crash it):
+
+* It sweeps the SDRAM clock phase over one clock period (the MMCM's dynamic
+  phase shift), for CAS latency 2 and 3 and extra read delays, and tests the
+  SDRAM at each point, showing the working range and the built-in phase's
+  margin. (The SoC's `REG_SDRAM_CFG` / `REG_SDRAM_PHASE` registers change the
+  SDRAM configuration and clock phase at run time; the PICO-8 program doesn't
+  use them.)
+* It then stress tests the SDRAM (30 MiB, several patterns) and the CPU
+  (test programs with expected results computed at build time, run from
+  block RAM and SDRAM), counting errors.
+
+The results are on screen and in `<cart>.p8.log`. `scripts/build_clocktest.sh`
+builds bitstreams at several clocks, and `scripts/package_clocktest.sh` makes
+one test core per bitstream (`pico8-clocktest.zip` in the releases).
+
+Measured on a rev 4 device (5 minutes of stress tests each, 0 errors at 100,
+111.1 and 125 MHz): the SDRAM works over about 100-340 degrees of clock phase
+(CL2), the same in degrees at each clock; the cores use 225 degrees, the
+middle (±2.5 ns of margin at 125 MHz). Vivado's timing (worst case): 100 MHz
+met, 111.1 MHz ~0.25 ns short (CPU), 125 MHz ~0.55 ns short (CPU) and the
+SDRAM read timing (with estimated board delays). The chip (Winbond
+W9825G6KH) is rated for CL2 at 133 MHz (-5/-6 grades).
+
+A higher SDRAM clock (in its own clock domain) would help little: the SDRAM
+is busy ~20-25% of the time, and a clock domain crossing would add latency to
+each cache miss.
+
 ## Status
 
 * Simulated end to end: the host interface (file loading, commands, save
   readback) with the generated core, and fake-08 running carts on the soft
-  CPU. Timing is met at 90.9 MHz. Runs on a rev 4 device.
-* Performance (percent of the 60 Hz frame time, measured on the CPU's cycle
-  counter; the device matches the simulation):
+  CPU. Runs on a rev 4 device.
+* Performance (percent of the 60 Hz frame time, VM + audio, measured on the
+  CPU's cycle counter in simulation; the device matches the simulation):
 
-  | Cart                          | VexRiscv | VexiiRiscv | |
-  |-------------------------------|------|-----|-------------------------|
-  | Beckon the Hellspawn (gameplay) | ~62% + 19% | ~40-47% + 15% | full speed |
-  | Celeste                       | ~43% + 2% |  | full speed              |
-  | Dinky Kong (gameplay)         | ~210% + 23% | ~159% + 15% | ~55% speed |
+  | Cart                          | VexRiscv 90.9 MHz | VexiiRiscv 90.9 MHz | VexiiRiscv 111.1 MHz (est.) | |
+  |-------------------------------|------|-----|-----|---------------------|
+  | Beckon the Hellspawn (gameplay) | ~62% + 19% | ~40-47% + 15% | ~33-38% + 12% | full speed |
+  | Celeste                       | ~43% + 2% |  |  | full speed              |
+  | Dinky Kong (gameplay)         | ~210% + 23% | ~159% + 15% | ~130% + 12% | ~70% speed (~80% at 125 MHz) |
 
-  (VM + audio.) Heavy carts are limited by the Lua VM on the soft CPU. Dual
-  issue VexiiRiscv (`cpuVexii = 2`) is only ~4% faster per clock and meets
-  timing at 76.9 MHz at best (a slower clock overall).
+  Heavy carts are limited by the Lua VM on the soft CPU. Dual issue
+  VexiiRiscv (`cpuVexii = 2`) is only ~4% faster per clock and meets timing
+  at 76.9 MHz at best (a slower clock overall). An FPU would save ~2% (soft
+  float is 2-5% of the time, mostly audio control math).
 * Cart data (`cartdata()`) is saved when it changes (fake-08 only saves it
   when a cart is closed, and the core is simply stopped by the host).
 

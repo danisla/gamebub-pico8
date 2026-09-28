@@ -9,7 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/third_party/VexiiRiscv"
 sbt -batch "Test/runMain vexiiriscv.Generate --xlen=32 --with-rvm --with-rvc \
-  --lanes=1 --decoders=1 --with-late-alu --regfile-async --relaxed-branch \
+  --lanes=1 --decoders=1 --with-late-alu --regfile-async --relaxed-branch --relaxed-btb \
   --with-gshare --with-btb --with-ras --with-aligner-buffer --with-dispatcher-buffer \
   --without-mmu --reset-vector 0 \
   --with-fetch-l1 --fetch-l1-sets=128 --fetch-l1-ways=4 \

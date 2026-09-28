@@ -19,11 +19,20 @@
 #define REG_CONSOLE       IO_REG(0x0028)
 #define REG_SIM_EXIT      IO_REG(0x002C)
 #define REG_SAVE_SIZE     IO_REG(0x0030)
+// SDRAM test controls (sw/clocktest). Changing the configuration takes effect
+// with SDRAM_CFG_REINIT, which loses the SDRAM contents.
+#define REG_SDRAM_CFG     IO_REG(0x0040) // bit 0: CL3, bits 2:1: extra capture delay
+#define REG_SDRAM_PHASE   IO_REG(0x0044) // Write: shift (bit 0: 1 = later). Read: position << 16 | busy
 #define REG_PALETTE(i)    IO_REG(0x0100 + 4 * (i)) // Back buffer display palette, RGB888
 
 #define FRAMEBUFFER       ((volatile uint32_t *)(IO_BASE + 0x10000)) // Back buffer, 2048 words
 #define SAVE_BUFFER       ((volatile uint32_t *)(IO_BASE + 0x20000)) // 1024 words
 #define SAVE_BUFFER_SIZE  4096
+
+#define SDRAM_CFG_CL3     (1u << 0)
+#define SDRAM_CFG_EXTRA(n) ((uint32_t)(n) << 1)
+#define SDRAM_CFG_REINIT  (1u << 31) // write
+#define SDRAM_CFG_READY   (1u << 30) // read: initialized
 
 #define STATUS_FOCUS      (1u << 0)
 

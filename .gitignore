@@ -41,3 +41,8 @@ __pycache__
 /sim/audiocmp/draw_slow
 /sim/audiocmp/nofast-*
 /sim/obj_dir_vexii*
+/sw/clocktest/*.o
+/sw/clocktest/*.elf
+/sw/clocktest/*.bin
+/sw/clocktest/expected.h
+/sw/clocktest/gen_expected

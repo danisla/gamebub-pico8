@@ -29,7 +29,7 @@ clean:
 # The SoC with VexiiRiscv instead of VexRiscv: obj_dir_vexii/Vsim_top
 # VexiiRiscv lanes (hdl/vexiiriscv/VexiiRiscv.v must match) and clock.
 VEXII_LANES ?= 1
-VEXII_CLOCK_HZ ?= 90909090
+VEXII_CLOCK_HZ ?= 111111111
 VEXII_DIR ?= obj_dir_vexii
 VEXII_SOURCES := sim_top.sv sdram_model.sv \
 	$(ROOT)/hdl/pico8_soc.sv $(ROOT)/hdl/pico8_sdram.sv $(ROOT)/hdl/vexii_adapter.sv $(ROOT)/hdl/vexiiriscv/VexiiRiscv.v

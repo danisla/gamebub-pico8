@@ -466,7 +466,6 @@ module VexiiRiscv (
   wire       [31:0]   _zz_PcPlugin_logic_harts_0_self_pc;
   wire       [2:0]    _zz_PcPlugin_logic_harts_0_self_pc_1;
   wire       [0:0]    _zz_PcPlugin_logic_harts_0_aggregator_fault;
-  wire       [0:0]    _zz_PcPlugin_logic_harts_0_aggregator_fault_1_1;
   wire       [11:0]   _zz_CsrAccessPlugin_logic_fsm_inject_csrPriv;
   wire       [0:0]    _zz_CsrAccessPlugin_logic_fsm_inject_implemented;
   wire       [7:0]    _zz_CsrAccessPlugin_logic_fsm_inject_implemented_1;
@@ -620,7 +619,9 @@ module VexiiRiscv (
   wire                _zz_when_ExecuteLanePlugin_l306_1_5;
   wire                _zz_fetch_logic_flushes_0_doIt;
   wire                _zz_fetch_logic_flushes_0_doIt_1;
-  wire                _zz_fetch_logic_flushes_0_doIt_2;
+  wire                _zz_fetch_logic_flushes_1_doIt;
+  wire                _zz_fetch_logic_flushes_1_doIt_1;
+  wire                _zz_fetch_logic_flushes_1_doIt_2;
   wire       [63:0]   _zz_WhiteboxerPlugin_logic_decodes_0_pc;
   wire       [63:0]   _zz_WhiteboxerPlugin_logic_decodes_1_pc;
   wire       [31:0]   _zz_WhiteboxerPlugin_logic_csr_access_payload_address;
@@ -1014,17 +1015,20 @@ module VexiiRiscv (
   reg        [31:0]   decode_ctrls_1_up_Decode_INSTRUCTION_RAW_0;
   reg                 decode_ctrls_1_up_Decode_DECOMPRESSION_FAULT_0;
   reg        [31:0]   decode_ctrls_1_up_Decode_INSTRUCTION_0;
+  wire       [11:0]   fetch_logic_ctrls_1_down_Prediction_BRANCH_HISTORY;
   wire                fetch_logic_ctrls_1_down_Fetch_PC_FAULT;
   reg                 fetch_logic_ctrls_2_up_FetchL1Plugin_logic_onAddress0_translationPort_keys_BYPASS_TRANSLATION;
   reg                 fetch_logic_ctrls_2_up_FetchL1Plugin_logic_onAddress0_translationPort_keys_ACCESS_FAULT;
   reg                 fetch_logic_ctrls_2_up_FetchL1Plugin_logic_onAddress0_translationPort_keys_PAGE_FAULT;
   reg                 fetch_logic_ctrls_2_up_FetchL1Plugin_logic_onAddress0_translationPort_keys_HAZARD;
   reg                 fetch_logic_ctrls_2_up_FetchL1Plugin_logic_onAddress0_translationPort_keys_REFILL;
-  reg        [1:0]    fetch_logic_ctrls_2_up_Prediction_WORD_SLICES_TAKEN;
-  reg        [1:0]    fetch_logic_ctrls_2_up_Prediction_WORD_SLICES_BRANCH;
-  reg        [31:0]   fetch_logic_ctrls_2_up_Prediction_WORD_JUMP_PC;
-  reg        [0:0]    fetch_logic_ctrls_2_up_Prediction_WORD_JUMP_SLICE;
-  reg                 fetch_logic_ctrls_2_up_Prediction_WORD_JUMPED;
+  reg                 fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT;
+  reg        [15:0]   fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_hash;
+  reg        [0:0]    fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow;
+  reg        [30:0]   fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_pcTarget;
+  reg                 fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch;
+  reg                 fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPush;
+  reg                 fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPop;
   reg        [1:0]    fetch_logic_ctrls_2_up_GSharePlugin_GSHARE_COUNTER_0;
   reg        [1:0]    fetch_logic_ctrls_2_up_GSharePlugin_GSHARE_COUNTER_1;
   reg                 fetch_logic_ctrls_2_up_FetchL1Plugin_logic_WAYS_HIT;
@@ -1109,7 +1113,6 @@ module VexiiRiscv (
   wire       [31:0]   decode_ctrls_0_down_PC_0;
   wire       [9:0]    fetch_logic_ctrls_1_down_Fetch_ID;
   wire                fetch_logic_ctrls_1_down_isCancel;
-  wire                fetch_logic_ctrls_1_down_isReady;
   wire                fetch_logic_ctrls_1_down_isValid;
   wire       [9:0]    fetch_logic_ctrls_0_down_Fetch_ID;
   wire                fetch_logic_ctrls_0_down_isCancel;
@@ -1241,8 +1244,6 @@ module VexiiRiscv (
   wire       [31:0]   fetch_logic_ctrls_0_up_Fetch_WORD_PC;
   reg                 fetch_logic_ctrls_0_up_ready;
   wire                fetch_logic_ctrls_0_up_valid;
-  reg                 PcPlugin_logic_harts_0_aggregator_fault_1;
-  reg        [31:0]   PcPlugin_logic_harts_0_aggregator_target_1;
   wire       [0:0]    execute_ctrl3_down_Decode_INSTRUCTION_SLICE_COUNT_lane0;
   wire                execute_ctrl4_down_COMMIT_lane0;
   wire                execute_ctrl4_down_isReady;
@@ -1253,15 +1254,15 @@ module VexiiRiscv (
   wire                decode_ctrls_0_down_LANE_SEL_0;
   reg                 decode_ctrls_0_LANE_SEL_0_bypass;
   wire                decode_ctrls_0_up_isMoving;
-  reg        [1:0]    fetch_logic_ctrls_1_down_Prediction_WORD_SLICES_TAKEN;
-  reg        [1:0]    fetch_logic_ctrls_1_down_Prediction_WORD_SLICES_BRANCH;
-  wire       [11:0]   fetch_logic_ctrls_1_down_Prediction_BRANCH_HISTORY;
-  wire       [31:0]   fetch_logic_ctrls_1_down_Prediction_WORD_JUMP_PC;
-  wire       [0:0]    fetch_logic_ctrls_1_down_Prediction_WORD_JUMP_SLICE;
-  wire                fetch_logic_ctrls_1_down_Prediction_WORD_JUMPED;
-  wire                fetch_logic_ctrls_1_up_isCancel;
-  wire                fetch_logic_ctrls_1_up_isReady;
-  wire                fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN;
+  wire                fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT;
+  wire                fetch_logic_ctrls_1_down_isReady;
+  wire                fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN;
+  wire       [15:0]   fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_hash;
+  wire       [0:0]    fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow;
+  wire       [30:0]   fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_pcTarget;
+  wire                fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch;
+  wire                fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPush;
+  wire                fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPop;
   wire       [0:0]    fetch_logic_ctrls_1_down_BtbPlugin_logic_readCmd_HAZARDS;
   wire                fetch_logic_ctrls_1_up_isValid;
   wire                fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT;
@@ -1563,8 +1564,8 @@ module VexiiRiscv (
   wire                execute_ctrl2_down_LsuL1_FLUSH_lane0;
   wire                execute_ctrl2_down_LsuL1_SEL_lane0;
   wire       [31:0]   fetch_logic_ctrls_2_down_Prediction_WORD_JUMP_PC;
-  wire       [1:0]    fetch_logic_ctrls_2_down_Prediction_WORD_SLICES_TAKEN;
-  wire       [1:0]    fetch_logic_ctrls_2_down_Prediction_WORD_SLICES_BRANCH;
+  reg        [1:0]    fetch_logic_ctrls_2_down_Prediction_WORD_SLICES_TAKEN;
+  reg        [1:0]    fetch_logic_ctrls_2_down_Prediction_WORD_SLICES_BRANCH;
   wire       [11:0]   fetch_logic_ctrls_2_down_Prediction_BRANCH_HISTORY;
   wire       [1:0]    fetch_logic_ctrls_2_down_GSharePlugin_GSHARE_COUNTER_0;
   wire       [1:0]    fetch_logic_ctrls_2_down_GSharePlugin_GSHARE_COUNTER_1;
@@ -3552,14 +3553,13 @@ module VexiiRiscv (
   wire                _zz_PcPlugin_logic_harts_0_aggregator_oh_4;
   reg        [4:0]    _zz_PcPlugin_logic_harts_0_aggregator_oh_5;
   wire       [4:0]    PcPlugin_logic_harts_0_aggregator_oh;
-  (* keep , syn_keep *) wire       [31:0]   PcPlugin_logic_harts_0_aggregator_target /* synthesis syn_keep = 1 */ ;
+  wire       [31:0]   PcPlugin_logic_harts_0_aggregator_target;
   wire                PcPlugin_logic_harts_0_aggregator_fault;
   wire                _zz_PcPlugin_logic_harts_0_aggregator_target;
   wire                _zz_PcPlugin_logic_harts_0_aggregator_target_1;
   wire                _zz_PcPlugin_logic_harts_0_aggregator_target_2;
   wire                _zz_PcPlugin_logic_harts_0_aggregator_target_3;
-  wire                _zz_PcPlugin_logic_harts_0_aggregator_fault_1;
-  wire                when_PcPlugin_l80;
+  wire                _zz_PcPlugin_logic_harts_0_aggregator_target_4;
   wire                PcPlugin_logic_harts_0_holdComb;
   reg                 PcPlugin_logic_harts_0_holdReg;
   wire                PcPlugin_logic_harts_0_output_valid;
@@ -4343,8 +4343,7 @@ module VexiiRiscv (
   assign _zz_TrapPlugin_logic_harts_0_trap_fsm_jumpTarget = {29'd0, _zz_TrapPlugin_logic_harts_0_trap_fsm_jumpTarget_1};
   assign _zz_PcPlugin_logic_harts_0_self_pc_1 = (PcPlugin_logic_harts_0_self_increment ? 3'b100 : 3'b000);
   assign _zz_PcPlugin_logic_harts_0_self_pc = {29'd0, _zz_PcPlugin_logic_harts_0_self_pc_1};
-  assign _zz_PcPlugin_logic_harts_0_aggregator_fault = (((_zz_PcPlugin_logic_harts_0_aggregator_target ? TrapPlugin_logic_harts_0_trap_pcPort_payload_fault : 1'b0) | (_zz_PcPlugin_logic_harts_0_aggregator_target_1 ? late0_BranchPlugin_logic_pcPort_payload_fault : 1'b0)) | ((_zz_PcPlugin_logic_harts_0_aggregator_target_2 ? early0_BranchPlugin_logic_pcPort_payload_fault : 1'b0) | (_zz_PcPlugin_logic_harts_0_aggregator_target_3 ? PcPlugin_logic_harts_0_self_flow_payload_fault : 1'b0)));
-  assign _zz_PcPlugin_logic_harts_0_aggregator_fault_1_1 = (_zz_PcPlugin_logic_harts_0_aggregator_fault_1 ? BtbPlugin_logic_pcPort_payload_fault : 1'b0);
+  assign _zz_PcPlugin_logic_harts_0_aggregator_fault = ((((_zz_PcPlugin_logic_harts_0_aggregator_target ? TrapPlugin_logic_harts_0_trap_pcPort_payload_fault : 1'b0) | (_zz_PcPlugin_logic_harts_0_aggregator_target_1 ? late0_BranchPlugin_logic_pcPort_payload_fault : 1'b0)) | ((_zz_PcPlugin_logic_harts_0_aggregator_target_2 ? early0_BranchPlugin_logic_pcPort_payload_fault : 1'b0) | (_zz_PcPlugin_logic_harts_0_aggregator_target_3 ? BtbPlugin_logic_pcPort_payload_fault : 1'b0))) | (_zz_PcPlugin_logic_harts_0_aggregator_target_4 ? PcPlugin_logic_harts_0_self_flow_payload_fault : 1'b0));
   assign _zz_CsrAccessPlugin_logic_fsm_inject_csrPriv = execute_ctrl1_down_Decode_UOP_lane0[31 : 20];
   assign _zz_CsrAccessPlugin_logic_fsm_readLogic_csrValue_6 = ((_zz_when_CsrService_l223 && REG_CSR_3858) ? 6'h2e : 6'h0);
   assign _zz_CsrAccessPlugin_logic_fsm_readLogic_csrValue_5 = {26'd0, _zz_CsrAccessPlugin_logic_fsm_readLogic_csrValue_6};
@@ -4615,8 +4614,10 @@ module VexiiRiscv (
   assign _zz_when_ExecuteLanePlugin_l306_1_4 = 1'b1;
   assign _zz_when_ExecuteLanePlugin_l306_1_5 = 1'b1;
   assign _zz_fetch_logic_flushes_0_doIt = 1'b1;
-  assign _zz_fetch_logic_flushes_0_doIt_1 = (BtbPlugin_logic_flushPort_valid && 1'b1);
-  assign _zz_fetch_logic_flushes_0_doIt_2 = (1'b0 || (1'b1 && BtbPlugin_logic_flushPort_payload_self));
+  assign _zz_fetch_logic_flushes_0_doIt_1 = 1'b1;
+  assign _zz_fetch_logic_flushes_1_doIt = 1'b1;
+  assign _zz_fetch_logic_flushes_1_doIt_1 = (BtbPlugin_logic_flushPort_valid && 1'b1);
+  assign _zz_fetch_logic_flushes_1_doIt_2 = (1'b0 || (1'b1 && BtbPlugin_logic_flushPort_payload_self));
   assign BtbPlugin_logic_ras_mem_stack_spinal_port0 = BtbPlugin_logic_ras_mem_stack[BtbPlugin_logic_ras_ptr_pop_aheadValue];
   always @(posedge clk) begin
     if(_zz_2) begin
@@ -5706,20 +5707,6 @@ module VexiiRiscv (
     _zz_1 = 1'b0;
     if(CsrRamPlugin_logic_writeLogic_port_valid) begin
       _zz_1 = 1'b1;
-    end
-  end
-
-  always @(*) begin
-    PcPlugin_logic_harts_0_aggregator_fault_1 = PcPlugin_logic_harts_0_aggregator_fault;
-    if(when_PcPlugin_l80) begin
-      PcPlugin_logic_harts_0_aggregator_fault_1 = _zz_PcPlugin_logic_harts_0_aggregator_fault_1_1[0];
-    end
-  end
-
-  always @(*) begin
-    PcPlugin_logic_harts_0_aggregator_target_1 = PcPlugin_logic_harts_0_aggregator_target;
-    if(when_PcPlugin_l80) begin
-      PcPlugin_logic_harts_0_aggregator_target_1 = (_zz_PcPlugin_logic_harts_0_aggregator_fault_1 ? BtbPlugin_logic_pcPort_payload_pc : 32'h0);
     end
   end
 
@@ -9373,7 +9360,7 @@ module VexiiRiscv (
   assign BtbPlugin_logic_memRead_cmd_payload = _zz_BtbPlugin_logic_memRead_cmd_payload[8:0];
   assign fetch_logic_ctrls_0_down_BtbPlugin_logic_readCmd_HAZARDS = ((BtbPlugin_logic_memWrite_valid && (BtbPlugin_logic_memWrite_payload_address == BtbPlugin_logic_memRead_cmd_payload)) ? BtbPlugin_logic_memWrite_payload_mask : 1'b0);
   assign fetch_logic_ctrls_0_haltRequest_BtbPlugin_l200 = BtbPlugin_logic_memWrite_valid;
-  assign BtbPlugin_logic_predictions = {fetch_logic_ctrls_1_down_GSharePlugin_GSHARE_COUNTER_1[1],fetch_logic_ctrls_1_down_GSharePlugin_GSHARE_COUNTER_0[1]};
+  assign BtbPlugin_logic_predictions = {fetch_logic_ctrls_2_down_GSharePlugin_GSHARE_COUNTER_1[1],fetch_logic_ctrls_2_down_GSharePlugin_GSHARE_COUNTER_0[1]};
   assign fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_hash = BtbPlugin_logic_memRead_rsp_0_hash;
   assign fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow = BtbPlugin_logic_memRead_rsp_0_sliceLow;
   assign fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_pcTarget = BtbPlugin_logic_memRead_rsp_0_pcTarget;
@@ -9381,19 +9368,19 @@ module VexiiRiscv (
   assign fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPush = BtbPlugin_logic_memRead_rsp_0_isPush;
   assign fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPop = BtbPlugin_logic_memRead_rsp_0_isPop;
   assign fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT = ((fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_hash == fetch_logic_ctrls_1_down_Fetch_WORD_PC[26 : 11]) && (fetch_logic_ctrls_1_down_Fetch_WORD_PC[1 : 1] <= fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow));
-  assign fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN = ((! fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch) || BtbPlugin_logic_predictions[fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow]);
-  assign BtbPlugin_logic_ras_readIt = fetch_logic_ctrls_0_down_isReady;
-  assign BtbPlugin_logic_applyIt_chunksMask = (fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT && 1'b1);
-  assign BtbPlugin_logic_applyIt_chunksTakenOh = (fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN & BtbPlugin_logic_applyIt_chunksMask);
-  assign BtbPlugin_logic_applyIt_needIt = (fetch_logic_ctrls_1_up_isValid && (|BtbPlugin_logic_applyIt_chunksTakenOh));
-  assign when_BtbPlugin_l233 = (fetch_logic_ctrls_1_up_isReady || fetch_logic_ctrls_1_up_isCancel);
+  assign fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN = ((! fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch) || BtbPlugin_logic_predictions[fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow]);
+  assign BtbPlugin_logic_ras_readIt = fetch_logic_ctrls_1_down_isReady;
+  assign BtbPlugin_logic_applyIt_chunksMask = (fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT && 1'b1);
+  assign BtbPlugin_logic_applyIt_chunksTakenOh = (fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN & BtbPlugin_logic_applyIt_chunksMask);
+  assign BtbPlugin_logic_applyIt_needIt = (fetch_logic_ctrls_2_up_isValid && (|BtbPlugin_logic_applyIt_chunksTakenOh));
+  assign when_BtbPlugin_l233 = (fetch_logic_ctrls_2_up_isReady || fetch_logic_ctrls_2_up_isCancel);
   assign BtbPlugin_logic_applyIt_doIt = (BtbPlugin_logic_applyIt_needIt && (! BtbPlugin_logic_applyIt_correctionSent));
-  assign BtbPlugin_logic_applyIt_entry_hash = fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_hash;
-  assign BtbPlugin_logic_applyIt_entry_sliceLow = fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow;
-  assign BtbPlugin_logic_applyIt_entry_pcTarget = fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_pcTarget;
-  assign BtbPlugin_logic_applyIt_entry_isBranch = fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch;
-  assign BtbPlugin_logic_applyIt_entry_isPush = fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPush;
-  assign BtbPlugin_logic_applyIt_entry_isPop = fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPop;
+  assign BtbPlugin_logic_applyIt_entry_hash = fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_hash;
+  assign BtbPlugin_logic_applyIt_entry_sliceLow = fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow;
+  assign BtbPlugin_logic_applyIt_entry_pcTarget = fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_pcTarget;
+  assign BtbPlugin_logic_applyIt_entry_isBranch = fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch;
+  assign BtbPlugin_logic_applyIt_entry_isPush = fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPush;
+  assign BtbPlugin_logic_applyIt_entry_isPop = fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPop;
   always @(*) begin
     BtbPlugin_logic_applyIt_pcTarget = BtbPlugin_logic_applyIt_entry_pcTarget;
     if(BtbPlugin_logic_applyIt_entry_isPop) begin
@@ -9404,7 +9391,7 @@ module VexiiRiscv (
   assign BtbPlugin_logic_applyIt_doItSlice = BtbPlugin_logic_applyIt_entry_sliceLow;
   assign BtbPlugin_logic_applyIt_rasLogic_pushValid = (BtbPlugin_logic_applyIt_doIt && BtbPlugin_logic_applyIt_entry_isPush);
   always @(*) begin
-    BtbPlugin_logic_applyIt_rasLogic_pushPc = fetch_logic_ctrls_1_down_Fetch_WORD_PC;
+    BtbPlugin_logic_applyIt_rasLogic_pushPc = fetch_logic_ctrls_2_down_Fetch_WORD_PC;
     BtbPlugin_logic_applyIt_rasLogic_pushPc[1 : 1] = BtbPlugin_logic_applyIt_doItSlice;
   end
 
@@ -9414,23 +9401,23 @@ module VexiiRiscv (
   assign BtbPlugin_logic_pcPort_valid = BtbPlugin_logic_applyIt_doIt;
   assign BtbPlugin_logic_pcPort_payload_fault = 1'b0;
   assign BtbPlugin_logic_pcPort_payload_pc = ({1'd0,BtbPlugin_logic_applyIt_pcTarget} <<< 1'd1);
-  assign fetch_logic_ctrls_1_down_Prediction_WORD_JUMPED = BtbPlugin_logic_applyIt_needIt;
-  assign fetch_logic_ctrls_1_down_Prediction_WORD_JUMP_SLICE = BtbPlugin_logic_applyIt_doItSlice;
-  assign fetch_logic_ctrls_1_down_Prediction_WORD_JUMP_PC = ({1'd0,BtbPlugin_logic_applyIt_pcTarget} <<< 1'd1);
-  assign BtbPlugin_logic_applyIt_history_layers_0_history = fetch_logic_ctrls_1_down_Prediction_BRANCH_HISTORY;
-  assign BtbPlugin_logic_applyIt_history_layersLogic_0_doIt = (BtbPlugin_logic_applyIt_chunksMask[0] && fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch);
-  assign BtbPlugin_logic_applyIt_history_layersLogic_0_shifted = {BtbPlugin_logic_applyIt_history_layers_0_history[10 : 0],fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN};
+  assign fetch_logic_ctrls_2_down_Prediction_WORD_JUMPED = BtbPlugin_logic_applyIt_needIt;
+  assign fetch_logic_ctrls_2_down_Prediction_WORD_JUMP_SLICE = BtbPlugin_logic_applyIt_doItSlice;
+  assign fetch_logic_ctrls_2_down_Prediction_WORD_JUMP_PC = ({1'd0,BtbPlugin_logic_applyIt_pcTarget} <<< 1'd1);
+  assign BtbPlugin_logic_applyIt_history_layers_0_history = fetch_logic_ctrls_2_down_Prediction_BRANCH_HISTORY;
+  assign BtbPlugin_logic_applyIt_history_layersLogic_0_doIt = (BtbPlugin_logic_applyIt_chunksMask[0] && fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch);
+  assign BtbPlugin_logic_applyIt_history_layersLogic_0_shifted = {BtbPlugin_logic_applyIt_history_layers_0_history[10 : 0],fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN};
   assign BtbPlugin_logic_applyIt_history_layers_1_history = (BtbPlugin_logic_applyIt_history_layersLogic_0_doIt ? BtbPlugin_logic_applyIt_history_layersLogic_0_shifted : BtbPlugin_logic_applyIt_history_layers_0_history);
-  assign BtbPlugin_logic_historyPort_valid = ((fetch_logic_ctrls_1_up_isValid && (! BtbPlugin_logic_applyIt_correctionSent)) && (|fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT));
+  assign BtbPlugin_logic_historyPort_valid = ((fetch_logic_ctrls_2_up_isValid && (! BtbPlugin_logic_applyIt_correctionSent)) && (|fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT));
   assign BtbPlugin_logic_historyPort_payload_history = BtbPlugin_logic_applyIt_history_layers_1_history;
   always @(*) begin
-    fetch_logic_ctrls_1_down_Prediction_WORD_SLICES_BRANCH[0] = ((fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT && fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch) && (fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow == 1'b0));
-    fetch_logic_ctrls_1_down_Prediction_WORD_SLICES_BRANCH[1] = ((fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT && fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch) && (fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow == 1'b1));
+    fetch_logic_ctrls_2_down_Prediction_WORD_SLICES_BRANCH[0] = ((fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT && fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch) && (fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow == 1'b0));
+    fetch_logic_ctrls_2_down_Prediction_WORD_SLICES_BRANCH[1] = ((fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT && fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch) && (fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow == 1'b1));
   end
 
   always @(*) begin
-    fetch_logic_ctrls_1_down_Prediction_WORD_SLICES_TAKEN[0] = fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN;
-    fetch_logic_ctrls_1_down_Prediction_WORD_SLICES_TAKEN[1] = fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN;
+    fetch_logic_ctrls_2_down_Prediction_WORD_SLICES_TAKEN[0] = fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN;
+    fetch_logic_ctrls_2_down_Prediction_WORD_SLICES_TAKEN[1] = fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_predict_TAKEN;
   end
 
   assign AlignerPlugin_logic_buffer_flushIt = (|{(DecoderPlugin_logic_laneLogic_0_flushPort_valid && 1'b1),(late0_BranchPlugin_logic_flushPort_valid && 1'b1),(early0_EnvPlugin_logic_flushPort_valid && 1'b1),(CsrAccessPlugin_logic_flushPort_valid && 1'b1),(early0_BranchPlugin_logic_flushPort_valid && 1'b1),(LsuPlugin_logic_flushPort_valid && 1'b1)});
@@ -10298,16 +10285,15 @@ module VexiiRiscv (
   assign _zz_PcPlugin_logic_harts_0_aggregator_target = PcPlugin_logic_harts_0_aggregator_oh[0];
   assign _zz_PcPlugin_logic_harts_0_aggregator_target_1 = PcPlugin_logic_harts_0_aggregator_oh[1];
   assign _zz_PcPlugin_logic_harts_0_aggregator_target_2 = PcPlugin_logic_harts_0_aggregator_oh[2];
-  assign _zz_PcPlugin_logic_harts_0_aggregator_target_3 = PcPlugin_logic_harts_0_aggregator_oh[4];
-  assign PcPlugin_logic_harts_0_aggregator_target = (((_zz_PcPlugin_logic_harts_0_aggregator_target ? TrapPlugin_logic_harts_0_trap_pcPort_payload_pc : 32'h0) | (_zz_PcPlugin_logic_harts_0_aggregator_target_1 ? late0_BranchPlugin_logic_pcPort_payload_pc : 32'h0)) | ((_zz_PcPlugin_logic_harts_0_aggregator_target_2 ? early0_BranchPlugin_logic_pcPort_payload_pc : 32'h0) | (_zz_PcPlugin_logic_harts_0_aggregator_target_3 ? PcPlugin_logic_harts_0_self_flow_payload_pc : 32'h0)));
+  assign _zz_PcPlugin_logic_harts_0_aggregator_target_3 = PcPlugin_logic_harts_0_aggregator_oh[3];
+  assign _zz_PcPlugin_logic_harts_0_aggregator_target_4 = PcPlugin_logic_harts_0_aggregator_oh[4];
+  assign PcPlugin_logic_harts_0_aggregator_target = ((((_zz_PcPlugin_logic_harts_0_aggregator_target ? TrapPlugin_logic_harts_0_trap_pcPort_payload_pc : 32'h0) | (_zz_PcPlugin_logic_harts_0_aggregator_target_1 ? late0_BranchPlugin_logic_pcPort_payload_pc : 32'h0)) | ((_zz_PcPlugin_logic_harts_0_aggregator_target_2 ? early0_BranchPlugin_logic_pcPort_payload_pc : 32'h0) | (_zz_PcPlugin_logic_harts_0_aggregator_target_3 ? BtbPlugin_logic_pcPort_payload_pc : 32'h0))) | (_zz_PcPlugin_logic_harts_0_aggregator_target_4 ? PcPlugin_logic_harts_0_self_flow_payload_pc : 32'h0));
   assign PcPlugin_logic_harts_0_aggregator_fault = _zz_PcPlugin_logic_harts_0_aggregator_fault[0];
-  assign _zz_PcPlugin_logic_harts_0_aggregator_fault_1 = PcPlugin_logic_harts_0_aggregator_oh[3];
-  assign when_PcPlugin_l80 = (|_zz_PcPlugin_logic_harts_0_aggregator_fault_1);
   assign PcPlugin_logic_harts_0_holdComb = (|TrapPlugin_logic_harts_0_trap_fsm_holdPort);
   assign PcPlugin_logic_harts_0_output_valid = (! PcPlugin_logic_harts_0_holdReg);
-  assign PcPlugin_logic_harts_0_output_payload_fault = PcPlugin_logic_harts_0_aggregator_fault_1;
+  assign PcPlugin_logic_harts_0_output_payload_fault = PcPlugin_logic_harts_0_aggregator_fault;
   always @(*) begin
-    PcPlugin_logic_harts_0_output_payload_pc = PcPlugin_logic_harts_0_aggregator_target_1;
+    PcPlugin_logic_harts_0_output_payload_pc = PcPlugin_logic_harts_0_aggregator_target;
     PcPlugin_logic_harts_0_output_payload_pc[0 : 0] = 1'b0;
   end
 
@@ -11041,9 +11027,9 @@ module VexiiRiscv (
   assign execute_lane0_ctrls_4_upIsCancel = 1'b0;
   assign execute_lane0_logic_trapPending[0] = (|{((execute_ctrl3_up_LANE_SEL_lane0 && 1'b1) && execute_ctrl3_down_TRAP_lane0),((execute_ctrl2_up_LANE_SEL_lane0 && 1'b1) && execute_ctrl2_down_TRAP_lane0),((execute_ctrl1_up_LANE_SEL_lane0 && 1'b1) && execute_ctrl1_down_TRAP_lane0)});
   assign execute_ctrl1_up_COMMIT_lane0 = (! execute_ctrl1_up_TRAP_lane0);
-  assign fetch_logic_flushes_0_doIt = (|{(DecoderPlugin_logic_laneLogic_0_flushPort_valid && 1'b1),(late0_BranchPlugin_logic_flushPort_valid && 1'b1),(early0_EnvPlugin_logic_flushPort_valid && 1'b1),(CsrAccessPlugin_logic_flushPort_valid && 1'b1),(early0_BranchPlugin_logic_flushPort_valid && 1'b1),(LsuPlugin_logic_flushPort_valid && _zz_fetch_logic_flushes_0_doIt),(_zz_fetch_logic_flushes_0_doIt_1 && _zz_fetch_logic_flushes_0_doIt_2)});
+  assign fetch_logic_flushes_0_doIt = (|{(DecoderPlugin_logic_laneLogic_0_flushPort_valid && 1'b1),(late0_BranchPlugin_logic_flushPort_valid && 1'b1),(early0_EnvPlugin_logic_flushPort_valid && 1'b1),(CsrAccessPlugin_logic_flushPort_valid && 1'b1),(early0_BranchPlugin_logic_flushPort_valid && 1'b1),(LsuPlugin_logic_flushPort_valid && _zz_fetch_logic_flushes_0_doIt),(BtbPlugin_logic_flushPort_valid && _zz_fetch_logic_flushes_0_doIt_1)});
   assign fetch_logic_ctrls_1_throwWhen_FetchPipelinePlugin_l49 = fetch_logic_flushes_0_doIt;
-  assign fetch_logic_flushes_1_doIt = (|{(DecoderPlugin_logic_laneLogic_0_flushPort_valid && 1'b1),(late0_BranchPlugin_logic_flushPort_valid && 1'b1),(early0_EnvPlugin_logic_flushPort_valid && 1'b1),(CsrAccessPlugin_logic_flushPort_valid && 1'b1),(early0_BranchPlugin_logic_flushPort_valid && 1'b1),(LsuPlugin_logic_flushPort_valid && 1'b1)});
+  assign fetch_logic_flushes_1_doIt = (|{(DecoderPlugin_logic_laneLogic_0_flushPort_valid && 1'b1),(late0_BranchPlugin_logic_flushPort_valid && 1'b1),(early0_EnvPlugin_logic_flushPort_valid && 1'b1),(CsrAccessPlugin_logic_flushPort_valid && 1'b1),(early0_BranchPlugin_logic_flushPort_valid && 1'b1),(LsuPlugin_logic_flushPort_valid && _zz_fetch_logic_flushes_1_doIt),(_zz_fetch_logic_flushes_1_doIt_1 && _zz_fetch_logic_flushes_1_doIt_2)});
   assign fetch_logic_ctrls_2_forgetsSingleRequest_FetchPipelinePlugin_l51 = fetch_logic_flushes_1_doIt;
   assign integer_RegFilePlugin_logic_writeMerges_0_bus_valid = (|lane0_integer_WriteBackPlugin_logic_write_port_valid);
   assign integer_RegFilePlugin_logic_writeMerges_0_bus_address = lane0_integer_WriteBackPlugin_logic_write_port_address;
@@ -11411,11 +11397,13 @@ module VexiiRiscv (
   assign fetch_logic_ctrls_2_down_FetchL1Plugin_logic_WAYS_HIT = fetch_logic_ctrls_2_up_FetchL1Plugin_logic_WAYS_HIT;
   assign fetch_logic_ctrls_2_down_GSharePlugin_GSHARE_COUNTER_0 = fetch_logic_ctrls_2_up_GSharePlugin_GSHARE_COUNTER_0;
   assign fetch_logic_ctrls_2_down_GSharePlugin_GSHARE_COUNTER_1 = fetch_logic_ctrls_2_up_GSharePlugin_GSHARE_COUNTER_1;
-  assign fetch_logic_ctrls_2_down_Prediction_WORD_JUMPED = fetch_logic_ctrls_2_up_Prediction_WORD_JUMPED;
-  assign fetch_logic_ctrls_2_down_Prediction_WORD_JUMP_SLICE = fetch_logic_ctrls_2_up_Prediction_WORD_JUMP_SLICE;
-  assign fetch_logic_ctrls_2_down_Prediction_WORD_JUMP_PC = fetch_logic_ctrls_2_up_Prediction_WORD_JUMP_PC;
-  assign fetch_logic_ctrls_2_down_Prediction_WORD_SLICES_BRANCH = fetch_logic_ctrls_2_up_Prediction_WORD_SLICES_BRANCH;
-  assign fetch_logic_ctrls_2_down_Prediction_WORD_SLICES_TAKEN = fetch_logic_ctrls_2_up_Prediction_WORD_SLICES_TAKEN;
+  assign fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_hash = fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_hash;
+  assign fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow = fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow;
+  assign fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_pcTarget = fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_pcTarget;
+  assign fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch = fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch;
+  assign fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPush = fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPush;
+  assign fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPop = fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPop;
+  assign fetch_logic_ctrls_2_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT = fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT;
   assign fetch_logic_ctrls_2_down_FetchL1Plugin_logic_onAddress0_translationPort_keys_REFILL = fetch_logic_ctrls_2_up_FetchL1Plugin_logic_onAddress0_translationPort_keys_REFILL;
   assign fetch_logic_ctrls_2_down_FetchL1Plugin_logic_onAddress0_translationPort_keys_HAZARD = fetch_logic_ctrls_2_up_FetchL1Plugin_logic_onAddress0_translationPort_keys_HAZARD;
   assign fetch_logic_ctrls_2_down_FetchL1Plugin_logic_onAddress0_translationPort_keys_PAGE_FAULT = fetch_logic_ctrls_2_up_FetchL1Plugin_logic_onAddress0_translationPort_keys_PAGE_FAULT;
@@ -11768,8 +11756,6 @@ module VexiiRiscv (
   assign fetch_logic_ctrls_0_down_isReady = fetch_logic_ctrls_0_down_ready;
   assign fetch_logic_ctrls_0_down_isCancel = 1'b0;
   assign fetch_logic_ctrls_1_up_isValid = fetch_logic_ctrls_1_up_valid;
-  assign fetch_logic_ctrls_1_up_isReady = fetch_logic_ctrls_1_up_ready;
-  assign fetch_logic_ctrls_1_up_isCancel = fetch_logic_ctrls_1_up_cancel;
   assign fetch_logic_ctrls_1_down_isValid = fetch_logic_ctrls_1_down_valid;
   assign fetch_logic_ctrls_1_down_isReady = fetch_logic_ctrls_1_down_ready;
   assign fetch_logic_ctrls_1_down_isCancel = 1'b0;
@@ -12448,7 +12434,7 @@ module VexiiRiscv (
           end
         `endif
       `endif
-      if(fetch_logic_ctrls_1_up_isValid) begin
+      if(fetch_logic_ctrls_2_up_isValid) begin
         BtbPlugin_logic_applyIt_correctionSent <= 1'b1;
       end
       if(when_BtbPlugin_l233) begin
@@ -12924,11 +12910,13 @@ module VexiiRiscv (
       fetch_logic_ctrls_2_up_FetchL1Plugin_logic_WAYS_HIT <= fetch_logic_ctrls_1_down_FetchL1Plugin_logic_WAYS_HIT;
       fetch_logic_ctrls_2_up_GSharePlugin_GSHARE_COUNTER_0 <= fetch_logic_ctrls_1_down_GSharePlugin_GSHARE_COUNTER_0;
       fetch_logic_ctrls_2_up_GSharePlugin_GSHARE_COUNTER_1 <= fetch_logic_ctrls_1_down_GSharePlugin_GSHARE_COUNTER_1;
-      fetch_logic_ctrls_2_up_Prediction_WORD_JUMPED <= fetch_logic_ctrls_1_down_Prediction_WORD_JUMPED;
-      fetch_logic_ctrls_2_up_Prediction_WORD_JUMP_SLICE <= fetch_logic_ctrls_1_down_Prediction_WORD_JUMP_SLICE;
-      fetch_logic_ctrls_2_up_Prediction_WORD_JUMP_PC <= fetch_logic_ctrls_1_down_Prediction_WORD_JUMP_PC;
-      fetch_logic_ctrls_2_up_Prediction_WORD_SLICES_BRANCH <= fetch_logic_ctrls_1_down_Prediction_WORD_SLICES_BRANCH;
-      fetch_logic_ctrls_2_up_Prediction_WORD_SLICES_TAKEN <= fetch_logic_ctrls_1_down_Prediction_WORD_SLICES_TAKEN;
+      fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_hash <= fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_hash;
+      fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow <= fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_sliceLow;
+      fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_pcTarget <= fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_pcTarget;
+      fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch <= fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isBranch;
+      fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPush <= fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPush;
+      fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPop <= fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_readRsp_ENTRY_isPop;
+      fetch_logic_ctrls_2_up_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT <= fetch_logic_ctrls_1_down_BtbPlugin_logic_chunksLogic_0_hitCalc_HIT;
       fetch_logic_ctrls_2_up_FetchL1Plugin_logic_onAddress0_translationPort_keys_REFILL <= fetch_logic_ctrls_1_down_FetchL1Plugin_logic_onAddress0_translationPort_keys_REFILL;
       fetch_logic_ctrls_2_up_FetchL1Plugin_logic_onAddress0_translationPort_keys_HAZARD <= fetch_logic_ctrls_1_down_FetchL1Plugin_logic_onAddress0_translationPort_keys_HAZARD;
       fetch_logic_ctrls_2_up_FetchL1Plugin_logic_onAddress0_translationPort_keys_PAGE_FAULT <= fetch_logic_ctrls_1_down_FetchL1Plugin_logic_onAddress0_translationPort_keys_PAGE_FAULT;
