@@ -138,7 +138,7 @@ The simulation runs at ~2.8 MHz (about 30x slower than real time).
   |-------------------------------|------|-----|-------------------------|
   | Beckon the Hellspawn (gameplay) | ~62% | ~19% | full speed (was ~1/5) |
   | Celeste                       | ~43% | 2%  | full speed              |
-  | Dinky Kong                    | ~300% | ~70% | slow (measured before the latest optimizations) |
+  | Dinky Kong (gameplay)         | ~210% | ~23% | ~40% speed              |
 
   Heavy carts are limited by the Lua VM on the soft CPU (~90 MHz, single
   issue). The CPU's critical path is inside VexRiscv (I$ tags to the
@@ -153,6 +153,8 @@ Design notes:
   regenerate with `scripts/make_fake08_patch.sh`): integer `fix32` <-> double
   conversions (used for every PICO-8 API argument), `Vm::flushCartData()`,
   faster `map()`/`mget()` (cached map geometry, only visible cells),
+  text and sprite drawing (checked with `sim/audiocmp/drawtest.cpp`),
+  integer string to number conversion, force inlined `fix32` operators,
   pattern-filled spans and `circfill` (each row drawn once), computed goto
   dispatch in the Lua VM (`Z8_COMPUTED_GOTO`), and a fixed string hash seed
   for tests (`Z8_FIXED_SEED`). Graphics changes are checked for identical

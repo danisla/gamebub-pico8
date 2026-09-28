@@ -31,7 +31,7 @@ DEFINES += -DLUA_USE_LONGJMP
 DEFINES += -DZ8_COMPUTED_GOTO
 INCLUDES := -I. -I$(FAKE08)/source -I$(FAKE08)/libs/z8lua -I$(FAKE08)/libs/lodepng \
 	-I$(FAKE08)/libs/miniz -I$(FAKE08)/libs/simpleini
-COMMON := $(ARCH) $(OPT) -g -ffunction-sections -fdata-sections $(DEFINES) $(INCLUDES)
+COMMON := $(ARCH) $(OPT) -g -ffunction-sections -fdata-sections -MMD -MP $(DEFINES) $(INCLUDES)
 CFLAGS := $(COMMON) -std=gnu11 -Wall
 CXXFLAGS := $(COMMON) -std=gnu++17 -fno-rtti -Wall -Wno-unused-variable -Wno-unused-but-set-variable \
 	-Wno-sign-compare -Wno-unused-function -Wno-misleading-indentation
@@ -110,6 +110,8 @@ $(BUILD)/libs/miniz.o: $(FAKE08)/libs/miniz/miniz.c
 $(BUILD)/libs/ConvertUTF.o: $(FAKE08)/libs/simpleini/ConvertUTF.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+-include $(OBJS:.o=.d)
 
 clean:
 	rm -rf $(BUILD)

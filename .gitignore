@@ -37,3 +37,6 @@ __pycache__
 /sw/memtest/*.bin
 # Carts downloaded from the PICO-8 BBS for testing (not redistributed)
 /sim/carts/*.png
+/sim/audiocmp/draw_fast
+/sim/audiocmp/draw_slow
+/sim/audiocmp/nofast-*

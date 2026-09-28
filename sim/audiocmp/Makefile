@@ -46,3 +46,7 @@ seed-switch: $(PATCHED_SRC) $(ROOT)/sw/audio.cpp
 	$(CXX) $(PFLAGS) -DZ8_FIXED_SEED -x c++ $(PATCHED_SRC) $(ROOT)/sw/audio.cpp -o $@
 seed-goto: $(PATCHED_SRC) $(ROOT)/sw/audio.cpp
 	$(CXX) $(PFLAGS) -DZ8_FIXED_SEED -DZ8_COMPUTED_GOTO -x c++ $(PATCHED_SRC) $(ROOT)/sw/audio.cpp -o $@
+nofast-spr: $(PATCHED_SRC) $(ROOT)/sw/audio.cpp
+	$(CXX) $(PFLAGS) -DZ8_NO_FAST_SPR -x c++ $(PATCHED_SRC) $(ROOT)/sw/audio.cpp -o $@
+nofast-text: $(PATCHED_SRC) $(ROOT)/sw/audio.cpp
+	$(CXX) $(PFLAGS) -DZ8_NO_FAST_TEXT -x c++ $(PATCHED_SRC) $(ROOT)/sw/audio.cpp -o $@

@@ -200,14 +200,17 @@ bool Host::shouldQuit() {
 
 void Host::waitForTargetFps() {}
 
-/// Cycles spent waiting for the previous frame to be shown (for stats).
-uint64_t flipWaitCycles;
+/// Frames not shown because the previous one was still waiting to be shown.
+uint32_t droppedFrames;
 
 void Host::drawFrame(uint8_t *picoFb, uint8_t *screenPaletteMap, uint8_t drawMode) {
-    // Wait for the previous frame to be shown.
-    uint64_t t0 = hw_cycles();
-    while (REG_VIDEO_CTRL & VIDEO_CTRL_FLIP_PENDING) {}
-    flipWaitCycles += hw_cycles() - t0;
+    // The previous frame is shown at the start of the next video frame. If
+    // it's still waiting (the cart is running behind, or this is the idle
+    // step of a 30 fps cart), drop this frame instead of waiting for it.
+    if (REG_VIDEO_CTRL & VIDEO_CTRL_FLIP_PENDING) {
+        droppedFrames++;
+        return;
+    }
 
     const uint32_t *src = (const uint32_t *)applyScreenMode(picoFb, drawMode);
     for (int i = 0; i < 2048; i++) {
@@ -301,18 +304,22 @@ int main() {
     memcpy(cartDataSaved, &memory->data[0x5E00], sizeof(cartDataSaved));
 
     uint8_t heldPrev = 0;
-    uint32_t lastFrame = REG_FRAME_COUNT;
+    uint32_t nextFrame = REG_FRAME_COUNT + 1;
     uint32_t steps = 0;
     uint32_t skipped = 0;
     uint64_t stepCycles = 0;
     uint64_t audioCycles = 0;
-    uint64_t waitCycles = 0;
     for (;;) {
-        // Wait for the next video frame (and while the menu is open).
+        // One step per video frame: wait for the step's frame (and while the
+        // menu is open). When running behind, steps run back to back, up to
+        // 2 frames behind (one frame of a 30 fps cart), instead of waiting.
         uint32_t frame;
-        while ((frame = REG_FRAME_COUNT) == lastFrame || !(REG_STATUS & STATUS_FOCUS)) {}
-        skipped += frame - lastFrame - 1;
-        lastFrame = frame;
+        while ((int32_t)((frame = REG_FRAME_COUNT) - nextFrame) < 0 || !(REG_STATUS & STATUS_FOCUS)) {}
+        if ((int32_t)(frame - nextFrame) > 2) {
+            skipped += frame - nextFrame - 2;
+            nextFrame = frame - 2;
+        }
+        nextFrame++;
 
         uint8_t held = mapButtons(REG_BUTTONS);
         pendingDown |= held & ~heldPrev;
@@ -346,21 +353,18 @@ int main() {
             vm->flushCartData();
         }
 
-        stepCycles += t1 - t0 - flipWaitCycles;
-        waitCycles += flipWaitCycles;
-        flipWaitCycles = 0;
+        stepCycles += t1 - t0;
         audioCycles += t2 - t1;
         steps++;
         if (steps % PerfInterval == 0) {
-            printf("[perf] frames %lu: step %lu%% audio %lu%% flip wait %lu%% (of 60 Hz), skipped %lu, heap %u KiB, misaligned %lu\n",
+            printf("[perf] frames %lu: step %lu%% audio %lu%% (of 60 Hz), skipped %lu, dropped %lu, heap %u KiB, misaligned %lu\n",
                 (unsigned long)steps,
                 (unsigned long)(stepCycles * 100 / ((uint64_t)PerfInterval * clockHz / 60)),
                 (unsigned long)(audioCycles * 100 / ((uint64_t)PerfInterval * clockHz / 60)),
-                (unsigned long)(waitCycles * 100 / ((uint64_t)PerfInterval * clockHz / 60)),
-                (unsigned long)skipped, (unsigned)(heap_used() / 1024), (unsigned long)misaligned_trap_count());
+                (unsigned long)skipped, (unsigned long)droppedFrames, (unsigned)(heap_used() / 1024), (unsigned long)misaligned_trap_count());
             stepCycles = 0;
             audioCycles = 0;
-            waitCycles = 0;
+            droppedFrames = 0;
             skipped = 0;
         }
     }
