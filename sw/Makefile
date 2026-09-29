@@ -29,6 +29,8 @@ DEFINES += -U__INT32_TYPE__ -D__INT32_TYPE__=int -U__UINT32_TYPE__ -D'__UINT32_T
 DEFINES += -DLUA_USE_LONGJMP
 # z8lua: direct threaded instruction dispatch (sw/fake08.patch)
 DEFINES += -DZ8_COMPUTED_GOTO
+# The synthesizer runs on the audio core (audio_core.h), when the SoC has one.
+DEFINES += -DAUDIO_CORE
 INCLUDES := -I. -I$(FAKE08)/source -I$(FAKE08)/libs/z8lua -I$(FAKE08)/libs/lodepng \
 	-I$(FAKE08)/libs/miniz -I$(FAKE08)/libs/simpleini
 COMMON := $(ARCH) $(OPT) -g -ffunction-sections -fdata-sections -MMD -MP $(DEFINES) $(INCLUDES)
@@ -47,6 +49,7 @@ FAKE08_SRC := Input cart emojiconversion filehelpers filter fontdata graphics \
 
 # z8lua is compiled as C++ (like the other fake-08 platforms).
 OBJS := $(BUILD)/crt0.o $(BUILD)/syscalls.o $(BUILD)/gamebub.o $(BUILD)/audio.o \
+	$(BUILD)/audio_core.o $(BUILD)/audio_core1.o \
 	$(addprefix $(BUILD)/z8lua/,$(addsuffix .o,$(Z8LUA))) \
 	$(addprefix $(BUILD)/fake08/,$(addsuffix .o,$(FAKE08_SRC))) \
 	$(BUILD)/libs/lodepng.o $(BUILD)/libs/miniz.o $(BUILD)/libs/ConvertUTF.o
@@ -64,7 +67,7 @@ $(FAKE08_STAMP): fake08.patch
 	patch -p1 --quiet -d $(FAKE08) -i $(abspath fake08.patch)
 	touch $@
 
-$(BUILD)/gamebub.o $(BUILD)/audio.o: $(FAKE08_STAMP)
+$(BUILD)/gamebub.o $(BUILD)/audio.o $(BUILD)/audio_core.o $(BUILD)/audio_core1.o: $(FAKE08_STAMP)
 
 $(BUILD)/pico8.elf: $(OBJS) link.ld
 	$(CXX) $(LDFLAGS) -o $@ $(OBJS) -lstdc++ -lm -lc -lgcc
@@ -87,7 +90,15 @@ $(BUILD)/gamebub.o: gamebub.cpp hw.h syscalls.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(BUILD)/audio.o: audio.cpp
+$(BUILD)/audio.o: audio.cpp audio_core.h hw.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(BUILD)/audio_core.o: audio_core.cpp audio_core.h hw.h
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(BUILD)/audio_core1.o: audio_core1.cpp audio_core.h hw.h
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 

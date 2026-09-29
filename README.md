@@ -16,7 +16,8 @@ soft core in the FPGA:
    save file                        │ VexiiRiscv RV32IMC @ 111.1 MHz     │
                                     │   32 KiB I$ / 32 KiB D$            │
                                     │   fake-08 + z8lua, from SDRAM      │
-                                    │        │                           │
+                                    │        │  ▲▼ shared RAM            │
+                                    │        │ 2nd VexiiRiscv: audio     │
                                     │        ▼ 128x128 4bpp + palette    │
                                     │ framebuffer (double buffered) ─────┼─▶ framework
                                     │ audio FIFO (22050 Hz) ─────────────┼─▶ (LCD/HDMI,
@@ -35,6 +36,13 @@ soft core in the FPGA:
   (~2-20% of the CPU time, depending on the channels used). It's compared
   against the original in `sim/audiocmp/` (per instrument/effect/filter, and
   whole carts).
+* **Audio core**: a second VexiiRiscv runs the synthesizer and keeps the
+  audio FIFO filled (~23 ms), so the main CPU only runs the VM
+  (`sw/audio_core.h`). The main CPU's `sfx()`, `music()` and so on are sent
+  to it through a mailbox in a shared RAM, with the changed music and SFX
+  memory. The caches aren't coherent, so each CPU's data in the SDRAM is kept
+  apart from the other's (`sw/link.ld`). Without an audio core (VexRiscv, or
+  `audioCore = 0` in `HandheldPico8.scala`), the main CPU makes the samples.
 * **CPU**: [VexiiRiscv](https://github.com/SpinalHDL/VexiiRiscv) (MIT),
   single issue, with write-back data cache (64 byte lines) and GShare/BTB/RAS
   branch prediction, generated (`scripts/gen_vexiiriscv.sh`, output in
@@ -70,7 +78,7 @@ Controls: D-pad, B = O, A = X (Y and X also work), Start = pause menu.
 ## Layout
 
 * `hdl/`: the SoC (SystemVerilog):
-  * `pico8_soc.sv`: CPU, bus, block RAM, framebuffer, audio FIFO, I/O
+  * `pico8_soc.sv`: CPUs, bus, block RAM, shared RAM, framebuffer, audio FIFO, I/O
     registers, host access.
   * `pico8_sdram.sv`: SDRAM controller (cache line bursts, byte masks).
   * `pico8_gamebub.sv`: wrapper for the Chisel core.
@@ -102,12 +110,14 @@ CPU:
 | Address       | Size   | |
 |---------------|--------|-|
 | `0x0000_0000` | 8 MiB  | SDRAM: program image (loaded by the host) |
-| `0x0080_0000` | 23 MiB | SDRAM: data, bss, stack, heap |
+| `0x0080_0000` | 22 MiB | SDRAM: data, bss, stack, heap |
+| `0x01E0_0000` | 1 MiB  | SDRAM: audio core data and stack |
 | `0x01F0_0000` | 1 MiB  | SDRAM: cart (loaded by the host) |
 | `0x1000_0000` | 64 KiB | block RAM |
 | `0xF000_0000` |        | I/O registers (`sw/hw.h`; `0x40`/`0x44`: SDRAM test controls) |
 | `0xF001_0000` | 8 KiB  | framebuffer back buffer (write only) |
 | `0xF002_0000` | 4 KiB  | save buffer |
+| `0xF003_0000` | 8 KiB  | shared RAM (with the audio core) |
 
 Host (`files.json`): `0x1xxx_xxxx` program, `0x2xxx_xxxx` cart, `0x4xxx_xxxx`
 save buffer, `0x0000_xxxx` registers (`0x2000`: reset).
@@ -205,6 +215,10 @@ each cache miss.
   | Celeste                       | ~43% + 2% |  |  | full speed              |
   | Dinky Kong (gameplay)         | ~210% + 23% | ~159% + 15% | ~130% + 12% | ~70% speed (~80% at 125 MHz) |
 
+  With the audio core, the audio part (the second number) runs on the second
+  CPU: the main CPU spends ~1% of the frame on it (copying changed sound
+  memory), and the audio core is 1-12% busy (simulated at 111.1 MHz, no FIFO
+  underruns). Output matches the single CPU build (Beckon, Dinky Kong).
   Heavy carts are limited by the Lua VM on the soft CPU. Dual issue
   VexiiRiscv (`cpuVexii = 2`) is only ~4% faster per clock and meets timing
   at 76.9 MHz at best (a slower clock overall). An FPU would save ~2% (soft

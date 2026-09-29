@@ -18,6 +18,8 @@ object HandheldPico8 {
    * hdl/vexiiriscv/VexiiRiscv.v).
    */
   val cpuVexii = 1
+  /** Second CPU for audio (1 = on; with VexiiRiscv only). */
+  val audioCore = 1
   /** Build setting from the environment (for test builds, see sw/clocktest). */
   private def setting(name: String): Option[String] = sys.env.get(name).filter(_.nonEmpty)
   /**
@@ -183,6 +185,7 @@ class HandheldPico8 extends Module with Core {
     "CLOCK_HZ" -> IntParam(clockSystemHz),
     "FRAME_CLOCKS" -> IntParam(frameClocks),
     "CPU_VEXII" -> IntParam(cpuVexii),
+    "AUDIO_CORE" -> IntParam(audioCore),
   ))
   pico8.clockSdramOut := mmcm.io.clockOuts(3)
   // Dynamic SDRAM clock phase (for testing, see REG_SDRAM_PHASE)

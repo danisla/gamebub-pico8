@@ -1,11 +1,16 @@
 //
 // PICO-8 SoC for Game Bub.
 //
-// A VexRiscv CPU (RV32IM, 4 KiB I/D caches) runs fake-08 (a PICO-8 emulator)
-// from SDRAM. The CPU renders each PICO-8 frame (128x128, 4 bits per pixel,
-// plus a 16 color display palette) into a framebuffer here, which is scanned
-// out to the Game Bub framework. Audio samples are pushed into a FIFO, played
-// at a fixed rate.
+// A VexiiRiscv CPU (RV32IMC) runs fake-08 (a PICO-8 emulator) from SDRAM. The
+// CPU renders each PICO-8 frame (128x128, 4 bits per pixel, plus a 16 color
+// display palette) into a framebuffer here, which is scanned out to the Game
+// Bub framework. Audio samples are pushed into a FIFO, played at a fixed rate.
+//
+// A second CPU (the audio core, AUDIO_CORE) runs the PICO-8 synthesizer and
+// fills the audio FIFO. It runs the same program from SDRAM, and is held in
+// reset until the main CPU starts it (REG_CORE1_CTRL). The caches aren't
+// coherent: the CPUs exchange data through the shared RAM (uncached), and
+// each keeps its own data in the SDRAM apart from the other's (sw/link.ld).
 //
 // CPU memory map:
 //   0x0000_0000  SDRAM (32 MiB, cached). The program is loaded at 0 by the
@@ -14,6 +19,10 @@
 //   0xF000_0000  I/O registers (uncached)
 //   0xF001_0000  Framebuffer back buffer (8 KiB, write only)
 //   0xF002_0000  Save buffer (4 KiB)
+//   0xF003_0000  Shared RAM (8 KiB), also mapped for the audio core
+//
+// Audio core memory map: SDRAM at 0, I/O registers at 0xF000_0000 (a subset,
+// see io1_*), shared RAM at 0xF003_0000.
 //
 // The host (Game Bub MCU) accesses the SDRAM and the save buffer while the CPU
 // is held in reset.
@@ -25,7 +34,9 @@ module pico8_soc #(
 	/// Audio sample rate
 	parameter int AUDIO_HZ = 22050,
 	/// CPU: 0 = VexRiscv, 1 = VexiiRiscv, 2 = dual issue VexiiRiscv
-	parameter int CPU_VEXII = 1
+	parameter int CPU_VEXII = 1,
+	/// Second CPU for audio (a VexiiRiscv like the main CPU; not with VexRiscv)
+	parameter int AUDIO_CORE = 1
 ) (
 	input  logic        clk,
 	input  logic        clk_sdram_out,
@@ -188,6 +199,68 @@ module pico8_soc #(
 		end
 	endgenerate
 
+	// Audio core
+	localparam bit HAS_CORE1 = CPU_VEXII != 0 && AUDIO_CORE != 0;
+
+	logic        ibus1_cyc, ibus1_stb, ibus1_ack, ibus1_err;
+	logic [29:0] ibus1_adr;
+	logic [31:0] ibus1_dat_r;
+	logic [2:0]  ibus1_cti;
+
+	logic        dbus1_cyc, dbus1_stb, dbus1_ack, dbus1_we, dbus1_err;
+	logic [29:0] dbus1_adr;
+	logic [31:0] dbus1_dat_r, dbus1_dat_w;
+	logic [3:0]  dbus1_sel;
+	logic [2:0]  dbus1_cti;
+
+	// Started by the main CPU (REG_CORE1_CTRL), stopped with it.
+	logic core1_run;
+	logic cpu1_rst;
+	always_ff @(posedge clk) cpu1_rst <= cpu_rst || !core1_run;
+
+	generate
+		if (HAS_CORE1) begin : core1
+			VexiiAdapter #(.FETCH64(CPU_VEXII == 2)) cpu (
+			.clk(clk),
+			.reset(cpu1_rst),
+			.iBusWishbone_CYC(ibus1_cyc),
+			.iBusWishbone_STB(ibus1_stb),
+			.iBusWishbone_ACK(ibus1_ack),
+			.iBusWishbone_WE(),
+			.iBusWishbone_ADR(ibus1_adr),
+			.iBusWishbone_DAT_MISO(ibus1_dat_r),
+			.iBusWishbone_DAT_MOSI(),
+			.iBusWishbone_SEL(),
+			.iBusWishbone_ERR(ibus1_err),
+			.iBusWishbone_CTI(ibus1_cti),
+			.iBusWishbone_BTE(),
+			.dBusWishbone_CYC(dbus1_cyc),
+			.dBusWishbone_STB(dbus1_stb),
+			.dBusWishbone_ACK(dbus1_ack),
+			.dBusWishbone_WE(dbus1_we),
+			.dBusWishbone_ADR(dbus1_adr),
+			.dBusWishbone_DAT_MISO(dbus1_dat_r),
+			.dBusWishbone_DAT_MOSI(dbus1_dat_w),
+			.dBusWishbone_SEL(dbus1_sel),
+			.dBusWishbone_ERR(dbus1_err),
+			.dBusWishbone_CTI(dbus1_cti),
+			.dBusWishbone_BTE()
+		);
+		end else begin : no_core1
+			assign ibus1_cyc = 1'b0;
+			assign ibus1_stb = 1'b0;
+			assign ibus1_adr = '0;
+			assign ibus1_cti = '0;
+			assign dbus1_cyc = 1'b0;
+			assign dbus1_stb = 1'b0;
+			assign dbus1_we = 1'b0;
+			assign dbus1_adr = '0;
+			assign dbus1_dat_w = '0;
+			assign dbus1_sel = '0;
+			assign dbus1_cti = '0;
+		end
+	endgenerate
+
 	// Address decoding (by the top 4 address bits)
 	wire [3:0] ibus_region = ibus_adr[29:26];
 	wire [3:0] dbus_region = dbus_adr[29:26];
@@ -200,17 +273,28 @@ module pico8_soc #(
 	wire dbus_bram  = dbus_req && dbus_region == 4'h1;
 	wire dbus_io    = dbus_req && dbus_region == 4'hF;
 
+	// Audio core: SDRAM and I/O only.
+	wire ibus1_req = ibus1_cyc && ibus1_stb;
+	wire dbus1_req = dbus1_cyc && dbus1_stb;
+	wire ibus1_sdram = ibus1_req && ibus1_adr[29:26] == 4'h0;
+	wire dbus1_sdram = dbus1_req && dbus1_adr[29:26] == 4'h0;
+	wire dbus1_io    = dbus1_req && dbus1_adr[29:26] == 4'hF;
+
 	// Unmapped accesses: bus error (ack'd after a cycle).
-	logic ibus_err_r, dbus_err_r;
+	logic ibus_err_r, dbus_err_r, ibus1_err_r, dbus1_err_r;
 	always_ff @(posedge clk) begin
 		ibus_err_r <= ibus_req && !ibus_sdram && !ibus_bram && !ibus_err_r;
 		dbus_err_r <= dbus_req && !dbus_sdram && !dbus_bram && !dbus_io && !dbus_err_r;
+		ibus1_err_r <= ibus1_req && !ibus1_sdram && !ibus1_err_r;
+		dbus1_err_r <= dbus1_req && !dbus1_sdram && !dbus1_io && !dbus1_err_r;
 	end
 	assign ibus_err = ibus_err_r;
 	assign dbus_err = dbus_err_r;
+	assign ibus1_err = ibus1_err_r;
+	assign dbus1_err = dbus1_err_r;
 
 	////////////////////////////////////////////////////////////////////////
-	// SDRAM (shared by the instruction bus, data bus and host)
+	// SDRAM (shared by the CPUs' instruction and data buses, and the host)
 	////////////////////////////////////////////////////////////////////////
 
 	logic        sd_req_valid, sd_req_ready, sd_req_line;
@@ -253,26 +337,52 @@ module pico8_soc #(
 		.*
 	);
 
-	typedef enum logic [1:0] { M_DBUS, M_IBUS, M_HOST } master_t;
+	typedef enum logic [2:0] { M_DBUS, M_IBUS, M_HOST, M_DBUS1, M_IBUS1 } master_t;
 	typedef enum logic [1:0] { A_IDLE, A_REQUEST, A_READ, A_WRITE_ACK } arb_state_t;
 	arb_state_t arb_state /* verilator public */;
 	master_t    arb_master /* verilator public */;
 	logic       host_done_r;
+	// The CPUs take turns when both are waiting (the last one served waits).
+	logic       arb_last_core1;
 
 	// Wishbone incrementing bursts are line reads.
 	wire dbus_line = dbus_cti == 3'b010;
 	wire ibus_line = ibus_cti == 3'b010;
+	wire dbus1_line = dbus1_cti == 3'b010;
+	wire ibus1_line = ibus1_cti == 3'b010;
+	wire core0_sdram = dbus_sdram || ibus_sdram;
+	wire core1_sdram = dbus1_sdram || ibus1_sdram;
+	wire serve_core1 = core1_sdram && (!core0_sdram || !arb_last_core1);
 
 	always_ff @(posedge clk) begin
 		host_done_r <= 1'b0;
 		if (reset) begin
 			arb_state <= A_IDLE;
 			sd_req_valid <= 1'b0;
+			arb_last_core1 <= 1'b0;
 		end else begin
 			unique case (arb_state)
 				A_IDLE: begin
-					// Priority: data, instruction, host.
-					if (dbus_sdram) begin
+					// Priority: CPUs (data, then instruction), host.
+					if (serve_core1) begin
+						arb_last_core1 <= 1'b1;
+						sd_req_valid <= 1'b1;
+						arb_state <= A_REQUEST;
+						if (dbus1_sdram) begin
+							arb_master <= M_DBUS1;
+							sd_req_write <= dbus1_we;
+							sd_req_line <= dbus1_line && !dbus1_we;
+							sd_req_addr <= dbus1_adr[22:0];
+							sd_req_wdata <= dbus1_dat_w;
+							sd_req_wsel <= dbus1_sel;
+						end else begin
+							arb_master <= M_IBUS1;
+							sd_req_write <= 1'b0;
+							sd_req_line <= ibus1_line;
+							sd_req_addr <= ibus1_adr[22:0];
+						end
+					end else if (dbus_sdram) begin
+						arb_last_core1 <= 1'b0;
 						arb_master <= M_DBUS;
 						sd_req_valid <= 1'b1;
 						sd_req_write <= dbus_we;
@@ -282,6 +392,7 @@ module pico8_soc #(
 						sd_req_wsel <= dbus_sel;
 						arb_state <= A_REQUEST;
 					end else if (ibus_sdram) begin
+						arb_last_core1 <= 1'b0;
 						arb_master <= M_IBUS;
 						sd_req_valid <= 1'b1;
 						sd_req_write <= 1'b0;
@@ -355,6 +466,13 @@ module pico8_soc #(
 	wire [15:0]  io_addr = {dbus_adr[13:0], 2'b00};
 	wire [3:0]   io_block = dbus_adr[17:14]; // 64 KiB blocks
 
+	// Audio core
+	logic        io1_ack;
+	wire         io1_access = dbus1_io && !io1_ack;
+	wire         io1_write = io1_access && dbus1_we;
+	wire [15:0]  io1_addr = {dbus1_adr[13:0], 2'b00};
+	wire [3:0]   io1_block = dbus1_adr[17:14];
+
 	logic [63:0] cycle_counter;
 	logic [31:0] cycle_hi_latch;
 	logic [31:0] frame_counter;
@@ -403,7 +521,13 @@ module pico8_soc #(
 	logic [15:0] audio_fifo [0:(1 << AUDIO_FIFO_BITS) - 1];
 	logic [AUDIO_FIFO_BITS:0] audio_wr_ptr, audio_rd_ptr;
 	wire [AUDIO_FIFO_BITS:0] audio_count = audio_wr_ptr - audio_rd_ptr;
-	wire audio_push = io_write && io_block == 4'h0 && io_addr == 16'h0024 && !audio_count[AUDIO_FIFO_BITS];
+	// Samples are pushed by either CPU (by one at a time, see sw/audio_core.cpp).
+	wire audio_push0 = io_write && io_block == 4'h0 && io_addr == 16'h0024;
+	wire audio_push1 = io1_write && io1_block == 4'h0 && io1_addr == 16'h0024;
+	wire audio_push = (audio_push0 || audio_push1) && !audio_count[AUDIO_FIFO_BITS];
+	wire [15:0] audio_push_data = audio_push1 ? dbus1_dat_w[15:0] : dbus_dat_w[15:0];
+	// Samples played while the FIFO was empty (while the core runs).
+	logic [31:0] audio_underruns;
 
 	// Console / simulation control
 	wire console_write = io_write && io_block == 4'h0 && io_addr == 16'h0028;
@@ -430,6 +554,19 @@ module pico8_soc #(
 			log_buffer[{host_log_address[13:2], 2'd1}], log_buffer[{host_log_address[13:2], 2'd0}]};
 	end
 	wire sim_exit_write = io_write && io_block == 4'h0 && io_addr == 16'h002C;
+
+	// Shared RAM (8 KiB, dual port: the main CPU and the audio core, uncached)
+	logic [31:0] shared_ram [0:2047];
+	logic [31:0] shared0_q, shared1_q;
+	wire shared0_write = io_write && io_block == 4'h3;
+	always_ff @(posedge clk) begin
+		if (shared0_write) begin
+			for (int i = 0; i < 4; i++) begin
+				if (dbus_sel[i]) shared_ram[dbus_adr[10:0]][i*8 +: 8] <= dbus_dat_w[i*8 +: 8];
+			end
+		end
+		shared0_q <= shared_ram[dbus_adr[10:0]];
+	end
 
 	// SDRAM test controls (declared with the SDRAM controller).
 	always_ff @(posedge clk) begin
@@ -465,6 +602,11 @@ module pico8_soc #(
 	end
 
 	always_ff @(posedge clk) begin
+		if (cpu_rst) core1_run <= 1'b0;
+		else if (io_write && io_block == 4'h0 && io_addr == 16'h004C) core1_run <= dbus_dat_w[0] && HAS_CORE1;
+	end
+
+	always_ff @(posedge clk) begin
 		if (reset) begin
 			flip_pending <= 1'b0;
 			save_size <= '0;
@@ -480,17 +622,18 @@ module pico8_soc #(
 				endcase
 			end
 			if (audio_push) begin
-				audio_fifo[audio_wr_ptr[AUDIO_FIFO_BITS-1:0]] <= dbus_dat_w[15:0];
+				audio_fifo[audio_wr_ptr[AUDIO_FIFO_BITS-1:0]] <= audio_push_data;
 				audio_wr_ptr <= audio_wr_ptr + 1'b1;
 			end
 			if (frame_start && flip_pending) flip_pending <= 1'b0;
 		end
 	end
 
-	logic io_read_save;
+	logic io_read_save, io_read_shared;
 	always_ff @(posedge clk) begin
 		io_ack <= dbus_io && !io_ack;
 		io_read_save <= io_block == 4'h2;
+		io_read_shared <= io_block == 4'h3;
 		if (io_access && io_block == 4'h0) begin
 			case (io_addr)
 				16'h0000: io_rdata <= 32'h4742_3850; // "P8BG"
@@ -510,7 +653,46 @@ module pico8_soc #(
 				16'h0040: io_rdata <= {1'b0, sdram_ready && !sdram_reinit_pending && !sdram_reinit, 27'b0,
 					sdram_cfg_capture_extra, sdram_cfg_cl3};
 				16'h0044: io_rdata <= {ps_position, 15'b0, ps_busy};
+				16'h0048: io_rdata <= 32'd0;  // CPU number
+				16'h004C: io_rdata <= {HAS_CORE1, 30'b0, core1_run};
+				16'h0050: io_rdata <= audio_underruns;
 				default: io_rdata <= '0;
+			endcase
+		end
+	end
+
+	// Audio core I/O: identification, clock, cycle counter, status, audio FIFO,
+	// shared RAM.
+	logic [31:0] io1_rdata;
+	logic [31:0] cycle1_hi_latch;
+	logic        io1_read_shared;
+
+	always_ff @(posedge clk) begin
+		if (io1_write && io1_block == 4'h3) begin
+			for (int i = 0; i < 4; i++) begin
+				if (dbus1_sel[i]) shared_ram[dbus1_adr[10:0]][i*8 +: 8] <= dbus1_dat_w[i*8 +: 8];
+			end
+		end
+		shared1_q <= shared_ram[dbus1_adr[10:0]];
+	end
+
+	always_ff @(posedge clk) begin
+		io1_ack <= dbus1_io && !io1_ack;
+		io1_read_shared <= io1_block == 4'h3;
+		if (io1_access && io1_block == 4'h0) begin
+			case (io1_addr)
+				16'h0000: io1_rdata <= 32'h4742_3850; // "P8BG"
+				16'h0004: io1_rdata <= CLOCK_HZ;
+				16'h0008: begin
+					io1_rdata <= cycle_counter[31:0];
+					cycle1_hi_latch <= cycle_counter[63:32];
+				end
+				16'h000C: io1_rdata <= cycle1_hi_latch;
+				16'h0014: io1_rdata <= {31'b0, focus};
+				16'h0024: io1_rdata <= 32'(audio_count);
+				16'h0048: io1_rdata <= 32'd1;  // CPU number
+				16'h0050: io1_rdata <= audio_underruns;
+				default: io1_rdata <= '0;
 			endcase
 		end
 	end
@@ -540,9 +722,24 @@ module pico8_soc #(
 			dbus_dat_r = bram_d_q;
 		end else if (io_ack) begin
 			dbus_ack = 1'b1;
-			dbus_dat_r = io_read_save ? save_cpu_q : io_rdata;
+			dbus_dat_r = io_read_shared ? shared0_q : io_read_save ? save_cpu_q : io_rdata;
 		end
 	end
+
+	always_comb begin
+		dbus1_ack = 1'b0;
+		dbus1_dat_r = 32'h0;
+		if (arb_master == M_DBUS1 && (sd_read_ack || sd_write_ack)) begin
+			dbus1_ack = 1'b1;
+			dbus1_dat_r = sd_rd_data;
+		end else if (io1_ack) begin
+			dbus1_ack = 1'b1;
+			dbus1_dat_r = io1_read_shared ? shared1_q : io1_rdata;
+		end
+	end
+
+	assign ibus1_ack = arb_master == M_IBUS1 && sd_read_ack;
+	assign ibus1_dat_r = sd_rd_data;
 
 	always_comb begin
 		ibus_ack = 1'b0;
@@ -626,12 +823,15 @@ module pico8_soc #(
 			audio_acc <= '0;
 			audio_rd_ptr <= '0;
 			audio_sample <= '0;
+			audio_underruns <= '0;
 		end else begin
 			if (audio_acc + AUDIO_HZ >= CLOCK_HZ) begin
 				audio_acc <= audio_acc + AUDIO_HZ - CLOCK_HZ;
 				if (audio_count != 0) begin
 					audio_sample <= audio_fifo[audio_rd_ptr[AUDIO_FIFO_BITS-1:0]];
 					audio_rd_ptr <= audio_rd_ptr + 1'b1;
+				end else if (focus && !cpu_rst) begin
+					audio_underruns <= audio_underruns + 1'b1;
 				end
 			end else begin
 				audio_acc <= audio_acc + AUDIO_HZ;

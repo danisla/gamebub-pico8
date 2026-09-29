@@ -23,11 +23,16 @@
 // with SDRAM_CFG_REINIT, which loses the SDRAM contents.
 #define REG_SDRAM_CFG     IO_REG(0x0040) // bit 0: CL3, bits 2:1: extra capture delay
 #define REG_SDRAM_PHASE   IO_REG(0x0044) // Write: shift (bit 0: 1 = later). Read: position << 16 | busy
+#define REG_CPU_ID        IO_REG(0x0048) // 0: main CPU, 1: audio core
+#define REG_CORE1_CTRL    IO_REG(0x004C) // Audio core. Write bit 0: run. Read: present << 31 | running
+#define REG_AUDIO_UNDERRUNS IO_REG(0x0050) // Samples played with an empty audio FIFO
 #define REG_PALETTE(i)    IO_REG(0x0100 + 4 * (i)) // Back buffer display palette, RGB888
 
 #define FRAMEBUFFER       ((volatile uint32_t *)(IO_BASE + 0x10000)) // Back buffer, 2048 words
 #define SAVE_BUFFER       ((volatile uint32_t *)(IO_BASE + 0x20000)) // 1024 words
 #define SAVE_BUFFER_SIZE  4096
+#define SHARED_RAM        ((volatile uint32_t *)(IO_BASE + 0x30000)) // Shared with the audio core (uncached)
+#define SHARED_RAM_SIZE   8192
 
 #define SDRAM_CFG_CL3     (1u << 0)
 #define SDRAM_CFG_EXTRA(n) ((uint32_t)(n) << 1)
@@ -35,6 +40,9 @@
 #define SDRAM_CFG_READY   (1u << 30) // read: initialized
 
 #define STATUS_FOCUS      (1u << 0)
+
+#define CORE1_RUN         (1u << 0)
+#define CORE1_PRESENT     (1u << 31)
 
 #define VIDEO_CTRL_FLIP_PENDING (1u << 0)
 

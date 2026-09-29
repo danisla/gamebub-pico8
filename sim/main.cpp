@@ -193,7 +193,7 @@ int main(int argc, char **argv) {
 #ifndef PICO8_VEXII
     auto *cpu = soc->vex__DOT__cpu;
 #endif
-    uint64_t profileCycles = 0, sdramBusy[4] = {}, sdramWriteBusy = 0, writeRequests = 0;
+    uint64_t profileCycles = 0, sdramBusy[8] = {}, sdramWriteBusy = 0, writeRequests = 0;
     while (!Verilated::gotFinish() && frames < maxFrames) {
         if (top->sdram_ready && top->cpu_reset) {
             printf("[sim] SDRAM ready at cycle %lu, starting CPU\n", (unsigned long)cycle);
@@ -212,9 +212,10 @@ int main(int argc, char **argv) {
 #ifndef PICO8_VEXII
             if (cycle % 997 == 0) profile[cpu->lastStagePc]++;
 #endif
-            // SDRAM use by master (arbiter state != idle): 0 = data bus, 1 = instruction bus, 2 = host
+            // SDRAM use by master (arbiter state != idle): 0 = data bus, 1 = instruction bus, 2 = host,
+            // 3 = audio core data bus, 4 = audio core instruction bus
             profileCycles++;
-            if (soc->arb_state != 0) sdramBusy[soc->arb_master & 3]++;
+            if (soc->arb_state != 0) sdramBusy[soc->arb_master & 7]++;
             if (soc->arb_state != 0 && soc->arb_master == 0 && soc->sd_req_write) sdramWriteBusy++;
             if (soc->arb_state == 1 && soc->sd_req_write && soc->arb_master == 0) writeRequests += 0;
         }
@@ -267,6 +268,8 @@ int main(int argc, char **argv) {
             100.0 * sdramBusy[0] / profileCycles, 100.0 * sdramBusy[1] / profileCycles,
             (unsigned long)profileCycles);
         printf("[sim] of which data bus writes: %.1f%%\n", 100.0 * sdramWriteBusy / profileCycles);
+        printf("[sim] audio core SDRAM busy: data bus %.1f%%, instruction bus %.1f%%\n",
+            100.0 * sdramBusy[3] / profileCycles, 100.0 * sdramBusy[4] / profileCycles);
     }
     if (getenv("ARB_DEBUG")) {
         printf("[sim] arbiter state %d master %d write %d\n", (int)soc->arb_state, (int)soc->arb_master, (int)soc->sd_req_write);

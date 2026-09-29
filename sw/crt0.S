@@ -1,8 +1,12 @@
 # Startup: the program image (text, data) is loaded into the SDRAM by the host,
-# and the CPU starts at 0.
+# and the CPU starts at 0. The audio core (started later by the main CPU) starts
+# here too, and goes to core1_start.
     .section .text.start, "ax"
     .globl _start
 _start:
+    li t0, 0xF0000000
+    lw t0, 0x48(t0)         # REG_CPU_ID
+    bnez t0, core1_start
     .option push
     .option norelax
     la gp, __global_pointer$
@@ -41,6 +45,48 @@ _start:
     call main
     call exit
 3:  j 3b
+
+    # Audio core: its own stack and data (sw/link.ld), which the main CPU
+    # doesn't touch (the caches aren't coherent). No C library initialization:
+    # it doesn't use the C library's state (see sw/audio_core1.cpp).
+core1_start:
+    .option push
+    .option norelax
+    la gp, __global_pointer$
+    .option pop
+    la sp, __core1_stack_top
+    la t0, core1_trap
+    csrw mtvec, t0
+    la t0, __core1_data_start
+    la t1, __core1_data_end
+    la t2, __core1_data_load
+0:  bgeu t0, t1, 1f
+    lw t3, 0(t2)
+    sw t3, 0(t0)
+    addi t0, t0, 4
+    addi t2, t2, 4
+    j 0b
+1:  la t0, __core1_bss_start
+    la t1, __core1_bss_end
+2:  bgeu t0, t1, 3f
+    sw zero, 0(t0)
+    addi t0, t0, 4
+    j 2b
+3:  call core1_main
+4:  j 4b
+
+    # Audio core trap: report it in the shared RAM (AUDIO_TRAPPED,
+    # AUDIO_TRAP_CAUSE, AUDIO_TRAP_PC in sw/audio_core.h) and stop.
+    .align 4
+core1_trap:
+    li t0, 0xF0030000
+    li t1, 1
+    sw t1, 0x3F4(t0)
+    csrr t1, mcause
+    sw t1, 0x3F8(t0)
+    csrr t1, mepc
+    sw t1, 0x3FC(t0)
+5:  j 5b
 
     # Trap entry: save all registers (x0..x31 frame, x2 = sp before the trap),
     # call trap_handler(frame), restore and return. trap_handler may update

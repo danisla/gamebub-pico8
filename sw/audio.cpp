@@ -12,6 +12,9 @@
 //   computed per sample in fixed point.
 //
 // Values are Q16 (1.0 = 65536) unless noted.
+//
+// With AUDIO_CORE, this runs on the audio core (audio_core.h): the main CPU's
+// Audio object sends its calls there.
 
 #include "Audio.h"
 #include "filter.h"
@@ -25,6 +28,15 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+
+#ifdef AUDIO_CORE
+#include "audio_core.h"
+/// The main CPU's Audio object: the call goes to the audio core.
+#define REMOTE(call) \
+    if (audio_core::remote(this)) return audio_core::call
+#else
+#define REMOTE(call)
+#endif
 
 namespace {
 
@@ -337,6 +349,9 @@ void setup_synth(FixedSynth &s, const z8::synth_param &p, float master_volume) {
 Audio::Audio(PicoRam* memory){
     _memory = memory;
     _paused = false;
+#ifdef AUDIO_CORE
+    if (audio_core::remote(this)) return;
+#endif
 
     for (int k = 0; k < 64; k++) {
         key_freq[k] = 440.f * exp2f((k - 33.f) / 12.f);
@@ -346,10 +361,12 @@ Audio::Audio(PicoRam* memory){
 }
 
 void Audio::setPaused(bool paused) {
+    REMOTE(pause(paused));
     _paused = paused;
 }
 
 void Audio::resetAudioState() {
+    REMOTE(reset());
     _audioState._musicChannel.count = -1;
     _audioState._musicChannel.pattern = -1;
     _audioState._musicChannel.mask = 0;
@@ -394,6 +411,7 @@ audioState_t* Audio::getAudioState() {
 }
 
 int Audio::api_sfx(int sfx, int channel, int offset, int length){
+    REMOTE(sfx(sfx, channel, offset, length));
     // SFX index: valid values are 0..63 for actual samples,
     // -1 to stop sound on a channel, -2 to stop looping on a channel
     // Audio channel: valid values are 0..3, -1 (autoselect), or -2 (stop sfx on any channel)
@@ -532,6 +550,7 @@ int Audio::api_sfx(int sfx, int channel, int offset, int length){
 }
 
 void Audio::api_music(int pattern, int16_t fade_len, int16_t mask){
+    REMOTE(music(pattern, fade_len, mask));
     // pattern: 0..63, -1 to stop music.
     // fade_len: fade length in milliseconds (default 0)
     // mask: reserved channels
@@ -675,24 +694,29 @@ void Audio::launch_sfx(int16_t sfx, int16_t chan, float offset, float length, bo
 }
 
 int16_t Audio::getCurrentSfxId(int channel){
+    REMOTE(sfxId(channel));
     return _audioState._sfxChannels[channel].main_sfx.sfx;
 }
 
 int Audio::getCurrentNoteNumber(int channel){
+    REMOTE(noteNumber(channel));
     return _audioState._sfxChannels[channel].main_sfx.sfx < 0
         ? -1
         : (int)_audioState._sfxChannels[channel].main_sfx.offset;
 }
 
 int16_t Audio::getCurrentMusic(){
+    REMOTE(musicPattern());
     return _audioState._musicChannel.pattern;
 }
 
 int16_t Audio::getMusicPatternCount(){
+    REMOTE(musicCount());
     return _audioState._musicChannel.count;
 }
 
 int16_t Audio::getMusicTickCount(){
+    REMOTE(musicTick());
     return (int16_t)_audioState._musicChannel.offset;
 }
 

@@ -36,7 +36,12 @@ module sim_top #(
 `else
 	localparam int CPU_VEXII = 0;
 `endif
-	pico8_soc #(.CLOCK_HZ(CLOCK_HZ), .CPU_VEXII(CPU_VEXII)) soc (
+`ifdef PICO8_AUDIO_CORE
+	localparam int AUDIO_CORE = `PICO8_AUDIO_CORE;
+`else
+	localparam int AUDIO_CORE = 1;
+`endif
+	pico8_soc #(.CLOCK_HZ(CLOCK_HZ), .CPU_VEXII(CPU_VEXII), .AUDIO_CORE(AUDIO_CORE)) soc (
 		.clk(clk),
 		.clk_sdram_out(clk),
 		.reset(reset),

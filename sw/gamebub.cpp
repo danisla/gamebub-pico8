@@ -1,8 +1,9 @@
 // fake-08 platform for the Game Bub PICO-8 core.
 //
 // The cart is loaded into memory by the Game Bub host before the CPU starts.
-// Each video frame (60 Hz) the VM is stepped once, the PICO-8 screen is copied
-// to the hardware framebuffer, and the audio FIFO is topped up.
+// Each video frame (60 Hz) the VM is stepped once and the PICO-8 screen is
+// copied to the hardware framebuffer. The audio core fills the audio FIFO
+// (audio_core.h); without one, the audio FIFO is topped up after each step.
 
 #include <stdio.h>
 #include <string.h>
@@ -16,6 +17,7 @@
 #include "logger.h"
 #include "vm.h"
 #include "miniz.h"
+#include "audio_core.h"
 
 extern "C" {
 #include "hw.h"
@@ -282,6 +284,8 @@ int main() {
     Host *host = new Host();
     PicoRam *memory = new PicoRam();
     memory->Reset();
+    // Before the Audio object: it becomes the audio core's proxy.
+    bool audioCore = audio_core::start(memory);
     Audio *audio = new Audio(memory);
     Logger_Initialize("");
     Vm *vm = new Vm(host, memory, nullptr, nullptr, audio);
@@ -309,6 +313,8 @@ int main() {
     uint32_t skipped = 0;
     uint64_t stepCycles = 0;
     uint64_t audioCycles = 0;
+    audio_core::Stats audioStats = audio_core::stats();
+    uint32_t underruns = REG_AUDIO_UNDERRUNS;
     for (;;) {
         // One step per video frame: wait for the step's frame (and while the
         // menu is open). When running behind, steps run back to back, up to
@@ -332,7 +338,9 @@ int main() {
         uint64_t t1 = hw_cycles();
 
         uint32_t level = REG_AUDIO;
-        if (level < AudioTargetLevel) {
+        if (audioCore) {
+            audio_core::frame();
+        } else if (level < AudioTargetLevel) {
             uint32_t n = AudioTargetLevel - level;
             audio->FillMonoAudioBuffer(audioBuffer, 0, n);
             for (uint32_t i = 0; i < n; i++) {
@@ -341,7 +349,7 @@ int main() {
         }
         uint64_t t2 = hw_cycles();
 
-        if (steps < 20) {
+        if (steps < 20 && !audioCore) {
             printf("[step %lu] step %lu kcycles, audio %lu kcycles (%lu samples)\n", (unsigned long)steps,
                 (unsigned long)((t1 - t0) / 1000), (unsigned long)((t2 - t1) / 1000),
                 (unsigned long)(level < AudioTargetLevel ? AudioTargetLevel - level : 0));
@@ -356,12 +364,26 @@ int main() {
         stepCycles += t1 - t0;
         audioCycles += t2 - t1;
         steps++;
+        if (steps < 20 && audioCore) {
+            printf("[step %lu] step %lu kcycles, audio sync %lu kcycles (FIFO %lu samples)\n", (unsigned long)steps,
+                (unsigned long)((t1 - t0) / 1000), (unsigned long)((t2 - t1) / 1000), (unsigned long)level);
+        }
         if (steps % PerfInterval == 0) {
+            uint64_t intervalCycles = (uint64_t)PerfInterval * clockHz / 60;
             printf("[perf] frames %lu: step %lu%% audio %lu%% (of 60 Hz), skipped %lu, dropped %lu, heap %u KiB, misaligned %lu\n",
                 (unsigned long)steps,
-                (unsigned long)(stepCycles * 100 / ((uint64_t)PerfInterval * clockHz / 60)),
-                (unsigned long)(audioCycles * 100 / ((uint64_t)PerfInterval * clockHz / 60)),
+                (unsigned long)(stepCycles * 100 / intervalCycles),
+                (unsigned long)(audioCycles * 100 / intervalCycles),
                 (unsigned long)skipped, (unsigned long)droppedFrames, (unsigned)(heap_used() / 1024), (unsigned long)misaligned_trap_count());
+            uint32_t newUnderruns = REG_AUDIO_UNDERRUNS;
+            if (audioCore) {
+                audio_core::Stats s = audio_core::stats();
+                printf("[perf] audio core: busy %lu%%, %lu samples, underruns %lu\n",
+                    (unsigned long)((uint64_t)(s.busyCycles - audioStats.busyCycles) * 100 / intervalCycles),
+                    (unsigned long)(s.samples - audioStats.samples), (unsigned long)(newUnderruns - underruns));
+                audioStats = s;
+            }
+            underruns = newUnderruns;
             stepCycles = 0;
             audioCycles = 0;
             droppedFrames = 0;
