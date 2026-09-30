@@ -64,6 +64,8 @@ object HandheldPico8 {
     val focus = Input(Bool())
     /** {start, select, r, l, y, x, b, a, up, down, left, right} */
     val buttons = Input(UInt(12.W))
+    /** Screen rotation: 0 = none, 1 = clockwise, 2 = counterclockwise. */
+    val rotation = Input(UInt(2.W))
     val cartSize = Input(UInt(24.W))
 
     val hostSdramEnable = Input(Bool())
@@ -195,6 +197,15 @@ class HandheldPico8 extends Module with Core {
   pico8.focus := regCoreFocus
   pico8.cartSize := regCartSize
 
+  /**
+   * "Screen rotation" setting, for playing with the device held in portrait:
+   * 0 = none, 1 = the image turned clockwise (device turned
+   * counterclockwise, D-pad at the bottom), 2 = counterclockwise (D-pad at
+   * the top). Written by the host before the core runs.
+   */
+  val regRotation = RegInit(0.U(2.W))
+  pico8.rotation := regRotation
+
   // "Reset" setting: hold the CPU in reset for a moment, restarting the cart.
   val regResetTimer = RegInit(0.U(8.W))
   when (regCoreResetOnce) {
@@ -233,6 +244,7 @@ class HandheldPico8 extends Module with Core {
       0x0000 -> RegisterMap.Entry.r(Cat(regProgramLoaded, pico8.sdramReady)),
       0x0004 -> RegisterMap.Entry.r(pico8.saveSize),
       0x2000 -> RegisterMap.Entry.w(regCoreResetOnce),
+      0x2004 -> RegisterMap.Entry.rw(regRotation),
     )
   )
 
@@ -333,8 +345,10 @@ class HandheldPico8 extends Module with Core {
   // Core -> Host commands
   io.host.commandCore.request := false.B
 
-  // Input
+  // Input. Rotated, the D-pad is turned with the screen, so that up is up on
+  // the screen (indexed by regRotation: none, clockwise, counterclockwise).
   val buttons = io.input.buttons
+  def dpad(none: Bool, cw: Bool, ccw: Bool): Bool = VecInit(none, cw, ccw, none)(regRotation)
   pico8.buttons := Cat(
     buttons.start,
     buttons.select,
@@ -344,10 +358,10 @@ class HandheldPico8 extends Module with Core {
     buttons.x,
     buttons.b,
     buttons.a,
-    buttons.up,
-    buttons.down,
-    buttons.left,
-    buttons.right,
+    dpad(buttons.up, buttons.right, buttons.left),
+    dpad(buttons.down, buttons.left, buttons.right),
+    dpad(buttons.left, buttons.up, buttons.down),
+    dpad(buttons.right, buttons.down, buttons.up),
   )
 
   // Audio

@@ -6,6 +6,18 @@
       "type": "action",
       "address": "0x00002000",
       "value": 1
+    },
+    {
+      "id": 1,
+      "label": "Screen rotation",
+      "type": "list",
+      "address": "0x00002004",
+      "default": 0,
+      "items": [
+        { "label": "Off", "value": 0 },
+        { "label": "Portrait, D-pad at bottom", "value": 1 },
+        { "label": "Portrait, D-pad at top", "value": 2 }
+      ]
     }
   ]
 }

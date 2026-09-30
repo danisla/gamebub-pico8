@@ -7,6 +7,7 @@
 //   --frames N        stop after N video frames (default 120)
 //   --dump-every N    write every Nth frame to out/frame_NNNN.ppm (default 30)
 //   --press F:B[:L]   hold buttons B (hex, Game Bub bits) from frame F for L frames (default 6)
+//   --rotate R        screen rotation (0: none, 1: clockwise, 2: counterclockwise)
 //   --out DIR         output directory (default out)
 //   --random-ram      fill the SDRAM with random data first (like real memory at power up)
 //   --profile F       sample the CPU PC every 997 cycles from frame F; writes DIR/profile.txt
@@ -106,6 +107,7 @@ int main(int argc, char **argv) {
     std::vector<Press> presses;
     int profileFrom = -1;
     bool randomRam = false;
+    int rotation = 0;
     std::vector<const char *> positional;
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -115,6 +117,8 @@ int main(int argc, char **argv) {
             dumpEvery = atoi(argv[++i]);
         } else if (arg == "--out" && i + 1 < argc) {
             outDir = argv[++i];
+        } else if (arg == "--rotate" && i + 1 < argc) {
+            rotation = atoi(argv[++i]);
         } else if (arg == "--random-ram") {
             randomRam = true;
         } else if (arg == "--profile" && i + 1 < argc) {
@@ -169,6 +173,7 @@ int main(int argc, char **argv) {
 
     top->focus = 1;
     top->buttons = 0;
+    top->rotation = rotation;
     top->cart_size = cartSize;
     top->cpu_reset = 1;
     top->reset = 1;

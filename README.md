@@ -75,6 +75,11 @@ data (`cartdata()`) is saved next to the cart as `.p8d`.
 
 Controls: D-pad, B = O, A = X (Y and X also work), Start = pause menu.
 
+Settings: "Screen rotation" turns the screen 90 degrees, to play with the
+device held in portrait ("D-pad at bottom" or "D-pad at top"), and turns the
+D-pad with it. The PICO-8 screen is square, so it's the same size (3x,
+384x384) either way: 480 pixels (the short side) is the limit.
+
 ## Layout
 
 * `hdl/`: the SoC (SystemVerilog):

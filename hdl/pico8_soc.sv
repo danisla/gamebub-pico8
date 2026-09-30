@@ -48,6 +48,9 @@ module pico8_soc #(
 	input  logic        focus,
 	/// {start, select, r, l, y, x, b, a, up, down, left, right}
 	input  logic [11:0] buttons,
+	/// Screen rotation (for a device held in portrait): 0 = none, 1 = the
+	/// image turned 90 degrees clockwise, 2 = counterclockwise.
+	input  logic [1:0]  rotation,
 	input  logic [23:0] cart_size,
 
 	// Host access to the SDRAM: byte address, 32-bit words.
@@ -763,6 +766,8 @@ module pico8_soc #(
 	localparam int H_TOTAL = 128 + 32;
 	logic [7:0] vid_x;
 	logic [7:0] vid_y;
+	/// Rotation of the current frame (changes between frames only).
+	logic [1:0] vid_rotation;
 
 	always_ff @(posedge clk) begin
 		if (reset) begin
@@ -771,10 +776,12 @@ module pico8_soc #(
 			frame_counter <= '0;
 			vid_x <= '0;
 			vid_y <= 8'd128;
+			vid_rotation <= '0;
 		end else begin
 			frame_timer <= (frame_timer == FRAME_CLOCKS - 1) ? '0 : frame_timer + 1'b1;
 			if (frame_start) begin
 				if (flip_pending) front <= !front;
+				vid_rotation <= rotation;
 				frame_counter <= frame_counter + 1'b1;
 				vid_x <= '0;
 				vid_y <= '0;
@@ -796,12 +803,31 @@ module pico8_soc #(
 	logic        s1_vblank, s2_vblank;
 	logic [2:0]  s1_x;
 	wire active = vid_y < 8'd128 && vid_x < 8'd128;
+	// PICO-8 pixel shown at (vid_x, vid_y). Rotated, each output pixel is in
+	// a different framebuffer word (a column of the PICO-8 screen).
+	logic [6:0] src_x, src_y;
+	always_comb begin
+		case (vid_rotation)
+			2'd1: begin  // Clockwise: the top row of the image on the right.
+				src_x = vid_y[6:0];
+				src_y = ~vid_x[6:0];
+			end
+			2'd2: begin  // Counterclockwise: the top row on the left.
+				src_x = ~vid_y[6:0];
+				src_y = vid_x[6:0];
+			end
+			default: begin
+				src_x = vid_x[6:0];
+				src_y = vid_y[6:0];
+			end
+		endcase
+	end
 	always_ff @(posedge clk) begin
-		fb_q <= framebuffer[{front, vid_y[6:0], vid_x[6:3]}];
+		fb_q <= framebuffer[{front, src_y, src_x[6:3]}];
 		s1_active <= active;
 		s1_hblank <= vid_y < 8'd128 && vid_x >= 8'd128;
 		s1_vblank <= vid_y >= 8'd128;
-		s1_x <= vid_x[2:0];
+		s1_x <= src_x[2:0];
 
 		s2_active <= s1_active;
 		s2_hblank <= s1_hblank;

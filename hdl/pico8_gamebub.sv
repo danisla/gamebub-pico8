@@ -15,6 +15,7 @@ module Pico8Gamebub #(
     input  logic        cpuReset,
     input  logic        focus,
     input  logic [11:0] buttons,
+    input  logic [1:0]  rotation,
     input  logic [23:0] cartSize,
 
     input  logic        hostSdramEnable,
@@ -79,6 +80,7 @@ module Pico8Gamebub #(
         .cpu_reset(cpuReset),
         .focus(focus),
         .buttons(buttons),
+        .rotation(rotation),
         .cart_size(cartSize),
         .host_sdram_enable(hostSdramEnable),
         .host_sdram_write(hostSdramWrite),
