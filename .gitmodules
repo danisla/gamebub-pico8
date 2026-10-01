@@ -7,3 +7,6 @@
 [submodule "third_party/VexiiRiscv"]
 	path = third_party/VexiiRiscv
 	url = https://github.com/SpinalHDL/VexiiRiscv.git
+[submodule "framework"]
+	path = framework
+	url = https://github.com/gamebub/framework

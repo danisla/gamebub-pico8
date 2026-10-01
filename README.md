@@ -142,6 +142,7 @@ Requires nix (for the RISC-V toolchain and Verilator), Vivado 2026.1 in
 `~/Xilinx`, Java and Python 3.
 
 ```
+git submodule update --init framework
 git submodule update --init --recursive third_party/fake-08
 # only to regenerate the CPU (needs a JDK 17 and sbt):
 git submodule update --init --recursive third_party/VexiiRiscv

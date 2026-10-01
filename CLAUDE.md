@@ -97,8 +97,9 @@ packages instead:
 
 ## Layout notes
 
-- `framework/` is a vendored copy of the Game Bub framework (not a
-  submodule): avoid changing it; the core adapts to it.
+- `framework/` is the Game Bub framework, a git submodule
+  (github.com/gamebub/framework, as in gamebub-nes): don't change it; the
+  core adapts to it. After cloning: `git submodule update --init framework`.
 - The core's register map for the host (`HandheldPico8.scala`) is what
   `core/PICO-8/settings.json` addresses (`0x2000` reset, `0x2004` screen
   rotation). Firmware v1.1-beta2 setting types: `action`, `checkbox`, `list`
