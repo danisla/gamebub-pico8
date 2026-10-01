@@ -4,11 +4,14 @@
 // Each video frame (60 Hz) the VM is stepped once and the PICO-8 screen is
 // copied to the hardware framebuffer. The audio core fills the audio FIFO
 // (audio_core.h); without one, the audio FIFO is topped up after each step.
+// With the graphics accelerator (gfx.h), the PICO-8 RAM is its block RAM, it
+// draws most of the graphics, and it copies the screen to the framebuffer.
 
 #include <stdio.h>
 #include <string.h>
 #include <string>
 #include <vector>
+#include <new>
 
 #include "Audio.h"
 #include "PicoRam.h"
@@ -18,10 +21,18 @@
 #include "vm.h"
 #include "miniz.h"
 #include "audio_core.h"
+#include "gfx.h"
 
 extern "C" {
 #include "hw.h"
 #include "syscalls.h"
+}
+
+namespace gfx {
+bool enabled;
+uint32_t presentsSent;
+uint32_t sentPalette[4];
+bool paletteSent;
 }
 
 namespace {
@@ -206,9 +217,21 @@ void Host::waitForTargetFps() {}
 uint32_t droppedFrames;
 
 void Host::drawFrame(uint8_t *picoFb, uint8_t *screenPaletteMap, uint8_t drawMode) {
-    // The previous frame is shown at the start of the next video frame. If
-    // it's still waiting (the cart is running behind, or this is the idle
-    // step of a 30 fps cart), drop this frame instead of waiting for it.
+    if (gfx::enabled) {
+        if (drawMode == 0 && picoFb == (uint8_t *)PICO8_RAM + 0x6000) {
+            // After the frame's drawing commands (waits there while 2 frames
+            // are waiting to be shown: every frame is shown).
+            uint32_t rgb[16];
+            for (int i = 0; i < 16; i++) rgb[i] = paletteRgb[screenPaletteMap[i]];
+            gfx::present(0x6000, rgb);
+            return;
+        }
+        // The CPU writes the framebuffer, after the queued commands.
+        gfx::waitIdle();
+    }
+    // Queued frames are shown one per video frame (triple buffered). If 2 are
+    // still waiting (the cart is running behind, or this is the idle step of
+    // a 30 fps cart), drop this frame instead of waiting.
     if (REG_VIDEO_CTRL & VIDEO_CTRL_FLIP_PENDING) {
         droppedFrames++;
         return;
@@ -282,7 +305,10 @@ int main() {
     fs_init();
 
     Host *host = new Host();
-    PicoRam *memory = new PicoRam();
+    // With the graphics accelerator, the PICO-8 RAM is its block RAM.
+    gfx::enabled = (REG_GFX_STATUS & GFX_PRESENT) != 0;
+    printf("graphics accelerator: %s\n", gfx::enabled ? "yes" : "no");
+    PicoRam *memory = gfx::enabled ? new ((void *)PICO8_RAM) PicoRam() : new PicoRam();
     memory->Reset();
     // Before the Audio object: it becomes the audio core's proxy.
     bool audioCore = audio_core::start(memory);
@@ -315,10 +341,17 @@ int main() {
     uint64_t audioCycles = 0;
     audio_core::Stats audioStats = audio_core::stats();
     uint32_t underruns = REG_AUDIO_UNDERRUNS;
+    uint32_t gfxWaits = REG_GFX_WAITS;
     for (;;) {
         // One step per video frame: wait for the step's frame (and while the
         // menu is open). When running behind, steps run back to back, up to
         // 2 frames behind (one frame of a 30 fps cart), instead of waiting.
+        // With the accelerator, frames aren't dropped: they wait to be shown
+        // (up to 2, then PRESENT waits, and the accelerator with it). Don't
+        // get further ahead than 1 frame waiting (after catching up, the
+        // queue would stay full: a frame of latency, and the CPU waiting on
+        // the accelerator mid-step).
+        while (gfx::enabled && gfx::framesAhead() >= 2) {}
         uint32_t frame;
         while ((int32_t)((frame = REG_FRAME_COUNT) - nextFrame) < 0 || !(REG_STATUS & STATUS_FOCUS)) {}
         if ((int32_t)(frame - nextFrame) > 2) {
@@ -375,6 +408,11 @@ int main() {
                 (unsigned long)(stepCycles * 100 / intervalCycles),
                 (unsigned long)(audioCycles * 100 / intervalCycles),
                 (unsigned long)skipped, (unsigned long)droppedFrames, (unsigned)(heap_used() / 1024), (unsigned long)misaligned_trap_count());
+            if (gfx::enabled) {
+                uint32_t waits = REG_GFX_WAITS;
+                printf("[perf] graphics: frames waiting to be shown %lu\n", (unsigned long)(waits - gfxWaits));
+                gfxWaits = waits;
+            }
             uint32_t newUnderruns = REG_AUDIO_UNDERRUNS;
             if (audioCore) {
                 audio_core::Stats s = audio_core::stats();

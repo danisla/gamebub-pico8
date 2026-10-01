@@ -36,6 +36,12 @@ PATCHED_SRC := $(addprefix $(P)/libs/z8lua/,$(addsuffix .c,$(Z8))) $(P)/libs/min
 patched: $(PATCHED_SRC) $(ROOT)/sw/audio.cpp
 	$(CXX) $(PFLAGS) -x c++ $(PATCHED_SRC) $(ROOT)/sw/audio.cpp -o $@
 
+# The patched fake-08 with fixed seeds, for sim/native_check.sh (always rebuilt).
+native-check: $(PATCHED_SRC) $(ROOT)/sw/audio.cpp
+	$(CXX) $(PFLAGS) -g -DZ8_FIXED_SEED -include z8hooks.h -x c++ $(PATCHED_SRC) $(ROOT)/sw/audio.cpp -o $@
+
+.PHONY: native-check
+
 # original fake-08 graphics with the fixed audio (same audio as patched)
 fixed-orig: $(COMMON_SRC) $(ROOT)/sw/audio.cpp
 	$(CXX) $(FLAGS) -x c++ $(COMMON_SRC) $(ROOT)/sw/audio.cpp -o $@

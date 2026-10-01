@@ -19,7 +19,7 @@ soft core in the FPGA:
                                     │        │  ▲▼ shared RAM            │
                                     │        │ 2nd VexiiRiscv: audio     │
                                     │        ▼ 128x128 4bpp + palette    │
-                                    │ framebuffer (double buffered) ─────┼─▶ framework
+                                    │ framebuffer (triple buffered) ─────┼─▶ framework
                                     │ audio FIFO (22050 Hz) ─────────────┼─▶ (LCD/HDMI,
                                     │ SDRAM controller ── 32 MiB SDRAM   │    speakers)
                                     └────────────────────────────────────┘
@@ -43,6 +43,13 @@ soft core in the FPGA:
   memory. The caches aren't coherent, so each CPU's data in the SDRAM is kept
   apart from the other's (`sw/link.ld`). Without an audio core (VexRiscv, or
   `audioCore = 0` in `HandheldPico8.scala`), the main CPU makes the samples.
+* **Graphics accelerator** (`hdl/pico8_gfx.sv`): a blitter that draws
+  sprites, fills (with fill patterns), text and the frame copy from commands
+  the CPU queues, in parallel with the Lua VM. The PICO-8 RAM (64 KiB) lives
+  in its block RAM, uncached for the CPU; fake-08 sends commands for the
+  common cases (`sw/gfx.h`) and draws the rest itself. The SoC holds the
+  CPU's accesses that would race the queued commands (screen reads and
+  writes, sprite sheet writes). See `docs/performance-roadmap.md`.
 * **CPU**: [VexiiRiscv](https://github.com/SpinalHDL/VexiiRiscv) (MIT),
   single issue, with write-back data cache (64 byte lines) and GShare/BTB/RAS
   branch prediction, generated (`scripts/gen_vexiiriscv.sh`, output in
@@ -86,6 +93,7 @@ D-pad with it. The PICO-8 screen is square, so it's the same size (3x,
   * `pico8_soc.sv`: CPUs, bus, block RAM, shared RAM, framebuffer, audio FIFO, I/O
     registers, host access.
   * `pico8_sdram.sv`: SDRAM controller (cache line bursts, byte masks).
+  * `pico8_gfx.sv`: graphics accelerator.
   * `pico8_gamebub.sv`: wrapper for the Chisel core.
   * `pico8.xdc`: constraints (SDRAM I/O timing, as in the SNES core).
   * `vexii_adapter.sv`: VexiiRiscv behind VexRiscv style Wishbone buses.
@@ -118,11 +126,12 @@ CPU:
 | `0x0080_0000` | 22 MiB | SDRAM: data, bss, stack, heap |
 | `0x01E0_0000` | 1 MiB  | SDRAM: audio core data and stack |
 | `0x01F0_0000` | 1 MiB  | SDRAM: cart (loaded by the host) |
-| `0x1000_0000` | 64 KiB | block RAM |
+| `0x1000_0000` | 64 KiB | block RAM (cached; `sw/clocktest`) |
 | `0xF000_0000` |        | I/O registers (`sw/hw.h`; `0x40`/`0x44`: SDRAM test controls) |
 | `0xF001_0000` | 8 KiB  | framebuffer back buffer (write only) |
 | `0xF002_0000` | 4 KiB  | save buffer |
 | `0xF003_0000` | 8 KiB  | shared RAM (with the audio core) |
+| `0xF004_0000` | 64 KiB | the block RAM, uncached: the PICO-8 RAM (with the graphics accelerator) |
 
 Host (`files.json`): `0x1xxx_xxxx` program, `0x2xxx_xxxx` cart, `0x4xxx_xxxx`
 save buffer, `0x0000_xxxx` registers (`0x2000`: reset).
@@ -174,6 +183,9 @@ python3 ppm2png.py out/last.ppm out/last.png 3
 ```
 
 The simulation runs at ~2.8 MHz (about 30x slower than real time).
+`make vexii VEXII_DIR=obj_dir_nogfx VEXII_GFX=0` builds it without the
+graphics accelerator; `sim/cmp_frames.py` compares the frames of two runs
+(see `docs/performance-roadmap.md`, "Measuring").
 
 ## Clock testing
 

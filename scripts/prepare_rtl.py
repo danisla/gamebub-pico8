@@ -17,6 +17,7 @@ SOURCES = [
     "pico8_gamebub.sv",
     "pico8_soc.sv",
     "pico8_sdram.sv",
+    "pico8_gfx.sv",
     "pico8.xdc",
     "vexriscv/VexRiscv_Pico8.v",
     "vexii_adapter.sv",

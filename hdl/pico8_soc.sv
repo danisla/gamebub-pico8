@@ -15,11 +15,15 @@
 // CPU memory map:
 //   0x0000_0000  SDRAM (32 MiB, cached). The program is loaded at 0 by the
 //                host, the cart at CART_BASE.
-//   0x1000_0000  Block RAM (64 KiB, cached): stack and fast data.
+//   0x1000_0000  Block RAM (64 KiB, cached): stack and fast data (sw/clocktest).
 //   0xF000_0000  I/O registers (uncached)
 //   0xF001_0000  Framebuffer back buffer (8 KiB, write only)
 //   0xF002_0000  Save buffer (4 KiB)
 //   0xF003_0000  Shared RAM (8 KiB), also mapped for the audio core
+//   0xF004_0000  The block RAM again, uncached: the PICO-8 RAM, which the
+//                graphics accelerator (GFX, pico8_gfx.sv) draws in. Accesses
+//                that could see or change what queued commands use wait
+//                until it's idle.
 //
 // Audio core memory map: SDRAM at 0, I/O registers at 0xF000_0000 (a subset,
 // see io1_*), shared RAM at 0xF003_0000.
@@ -36,7 +40,9 @@ module pico8_soc #(
 	/// CPU: 0 = VexRiscv, 1 = VexiiRiscv, 2 = dual issue VexiiRiscv
 	parameter int CPU_VEXII = 1,
 	/// Second CPU for audio (a VexiiRiscv like the main CPU; not with VexRiscv)
-	parameter int AUDIO_CORE = 1
+	parameter int AUDIO_CORE = 1,
+	/// Graphics accelerator (pico8_gfx), drawing in the block RAM
+	parameter int GFX = 1
 ) (
 	input  logic        clk,
 	input  logic        clk_sdram_out,
@@ -168,6 +174,11 @@ module pico8_soc #(
 			.dBusWishbone_CTI(dbus_cti),
 			.dBusWishbone_BTE(dbus_bte)
 		);
+`ifdef VERILATOR
+			// PC of the instruction in the execute stage, sampled by the
+			// simulation's profiler (sim/main.cpp --profile).
+			wire [31:0] profile_pc /* verilator public */ = cpu.core.execute_ctrl2_down_PC_lane0;
+`endif
 		end else begin : vex
 			VexRiscv cpu (
 			.clk(clk),
@@ -436,21 +447,34 @@ module pico8_soc #(
 	assign host_sdram_done = host_done_r;
 
 	////////////////////////////////////////////////////////////////////////
-	// Block RAM (64 KiB, dual port: instruction and data bus)
+	// Block RAM (64 KiB, dual port). Port A: the data bus (cached at
+	// 0x1000_0000, uncached as the PICO-8 RAM at 0xF004_0000). Port B: the
+	// graphics accelerator while it runs a command, else the instruction bus.
 	////////////////////////////////////////////////////////////////////////
 
 	logic [31:0] bram [0:16383];
 	logic [31:0] bram_i_q, bram_d_q;
 	logic        bram_i_ack, bram_d_ack;
 
+	logic        gfx_mem_active, gfx_mem_we;
+	logic [13:0] gfx_mem_addr;
+	logic [31:0] gfx_mem_wdata;
+
+	wire [13:0] bram_b_addr = gfx_mem_active ? gfx_mem_addr : ibus_adr[13:0];
+	wire        bram_b_we = gfx_mem_active && gfx_mem_we;
 	always_ff @(posedge clk) begin
-		bram_i_ack <= ibus_bram && !bram_i_ack;
-		bram_i_q <= bram[ibus_adr[13:0]];
+		bram_i_ack <= ibus_bram && !bram_i_ack && !gfx_mem_active;
+		if (bram_b_we) begin
+			for (int i = 0; i < 4; i++) bram[bram_b_addr][i*8 +: 8] <= gfx_mem_wdata[i*8 +: 8];
+		end
+		bram_i_q <= bram[bram_b_addr];
 	end
 
+	// PICO-8 RAM writes (declared with the I/O).
+	logic p8_write;
 	always_ff @(posedge clk) begin
 		bram_d_ack <= dbus_bram && !bram_d_ack;
-		if (dbus_bram && !bram_d_ack && dbus_we) begin
+		if ((dbus_bram && !bram_d_ack && dbus_we) || p8_write) begin
 			for (int i = 0; i < 4; i++) begin
 				if (dbus_sel[i]) bram[dbus_adr[13:0]][i*8 +: 8] <= dbus_dat_w[i*8 +: 8];
 			end
@@ -464,10 +488,38 @@ module pico8_soc #(
 
 	logic        io_ack;
 	logic [31:0] io_rdata;
-	wire         io_access = dbus_io && !io_ack;
+	logic        io_wait;  // the access waits for the graphics accelerator
+	wire         io_access = dbus_io && !io_ack && !io_wait;
 	wire         io_write = io_access && dbus_we;
 	wire [15:0]  io_addr = {dbus_adr[13:0], 2'b00};
 	wire [3:0]   io_block = dbus_adr[17:14]; // 64 KiB blocks
+
+	// Graphics accelerator
+	logic        gfx_busy, gfx_cmd_ready, gfx_flip;
+	logic        gfx_fb_we, gfx_pal_we;
+	logic [10:0] gfx_fb_addr;
+	logic [31:0] gfx_fb_wdata;
+	logic [3:0]  gfx_pal_index;
+	logic [23:0] gfx_pal_rgb;
+	logic [31:0] gfx_present_waits, gfx_presents;
+	wire gfx_cmd_write = io_write && io_block == 4'h0 && io_addr == 16'h0060;
+
+	// PICO-8 RAM (the block RAM, uncached). While the accelerator is busy:
+	// no writes to what it reads (0x0000-0x30FF), no access to the screen
+	// (0x6000-0x7FFF).
+	wire p8_access = dbus_io && io_block == 4'h4;
+	wire p8_hazard = (dbus_we && io_addr < 16'h3100) || io_addr[15:13] == 3'b011;
+	assign p8_write = io_write && io_block == 4'h4;
+
+	always_comb begin
+		io_wait = 1'b0;
+		if (GFX != 0) begin
+			if (p8_access && p8_hazard && gfx_busy) io_wait = 1'b1;
+			// The back buffer: the accelerator's PRESENT writes it.
+			if (dbus_io && io_block == 4'h1 && gfx_busy) io_wait = 1'b1;
+			if (dbus_io && dbus_we && io_block == 4'h0 && io_addr == 16'h0060 && !gfx_cmd_ready) io_wait = 1'b1;
+		end
+	end
 
 	// Audio core
 	logic        io1_ack;
@@ -487,16 +539,88 @@ module pico8_soc #(
 	// Video state
 	logic [$clog2(FRAME_CLOCKS)-1:0] frame_timer;
 	wire         frame_start = frame_timer == 0;
-	logic        front;        // front buffer index
-	logic        flip_pending;
-	logic [23:0] palette [0:1][0:15];
-
-	// Framebuffer: 2 x 2048 words (8 pixels per word, pixel 0 in the low nibble)
-	logic [31:0] framebuffer [0:4095];
-	wire fb_write = io_write && io_block == 4'h1;
-	always_ff @(posedge clk) begin
-		if (fb_write) framebuffer[{!front, dbus_adr[10:0]}] <= dbus_dat_w;
+	// Triple buffered: the front buffer (shown), up to 2 frames waiting to be
+	// shown (one per video frame, in order), and the back buffer after them,
+	// written by the CPU or PRESENT (frames aren't dropped while the next one
+	// is drawn).
+	logic [1:0]  front;        // front buffer index (0-2)
+	logic [1:0]  queued;       // frames waiting to be shown (0-2)
+	wire         flip_pending = queued == 2'd2;  // no back buffer free
+	logic [1:0]  back;
+	always_comb begin
+		case (3'(front) + 3'(queued))
+			3'd0, 3'd3: back = 2'd1;
+			3'd1, 3'd4: back = 2'd2;
+			default: back = 2'd0;
+		endcase
 	end
+	logic [23:0] palette [0:2][0:15];
+
+	// Framebuffer: 3 x 2048 words (8 pixels per word, pixel 0 in the low nibble)
+	logic [31:0] framebuffer [0:6143];
+	wire fb_write = io_write && io_block == 4'h1;
+	// One write port (the accelerator's PRESENT or the CPU), muxed before the
+	// RAM so that it stays a block RAM. The CPU's writes are registered first
+	// (timing; the CPU doesn't read the framebuffer, and doesn't write it
+	// while the accelerator is busy).
+	logic        fb_cpu_we;
+	logic [10:0] fb_cpu_addr;
+	logic [31:0] fb_cpu_wdata;
+	always_ff @(posedge clk) begin
+		fb_cpu_we <= fb_write;
+		fb_cpu_addr <= dbus_adr[10:0];
+		fb_cpu_wdata <= dbus_dat_w;
+	end
+	wire        fb_we = gfx_fb_we || fb_cpu_we;
+	wire [10:0] fb_waddr = gfx_fb_we ? gfx_fb_addr : fb_cpu_addr;
+	wire [31:0] fb_wdata = gfx_fb_we ? gfx_fb_wdata : fb_cpu_wdata;
+	always_ff @(posedge clk) begin
+		if (fb_we) framebuffer[{back, fb_waddr}] <= fb_wdata;
+	end
+
+	generate
+		if (GFX != 0) begin : gfx
+			pico8_gfx gfx (
+				.clk(clk),
+				.reset(cpu_rst),
+				.cmd_valid(gfx_cmd_write),
+				.cmd_data(dbus_dat_w),
+				.cmd_ready(gfx_cmd_ready),
+				.busy(gfx_busy),
+				.mem_active(gfx_mem_active),
+				.mem_addr(gfx_mem_addr),
+				.mem_we(gfx_mem_we),
+				.mem_wdata(gfx_mem_wdata),
+				.mem_rdata(bram_i_q),
+				.fb_we(gfx_fb_we),
+				.fb_addr(gfx_fb_addr),
+				.fb_wdata(gfx_fb_wdata),
+				.pal_we(gfx_pal_we),
+				.pal_index(gfx_pal_index),
+				.pal_rgb(gfx_pal_rgb),
+				.flip_pending(flip_pending),
+				.flip(gfx_flip),
+				.present_waits(gfx_present_waits),
+				.presents(gfx_presents)
+			);
+		end else begin : no_gfx
+			assign gfx_busy = 1'b0;
+			assign gfx_cmd_ready = 1'b1;
+			assign gfx_mem_active = 1'b0;
+			assign gfx_mem_addr = '0;
+			assign gfx_mem_we = 1'b0;
+			assign gfx_mem_wdata = '0;
+			assign gfx_fb_we = 1'b0;
+			assign gfx_fb_addr = '0;
+			assign gfx_fb_wdata = '0;
+			assign gfx_pal_we = 1'b0;
+			assign gfx_pal_index = '0;
+			assign gfx_pal_rgb = '0;
+			assign gfx_flip = 1'b0;
+			assign gfx_present_waits = '0;
+			assign gfx_presents = '0;
+		end
+	endgenerate
 
 	// Save buffer
 	logic [31:0] save_buffer [0:1023];
@@ -609,34 +733,39 @@ module pico8_soc #(
 		else if (io_write && io_block == 4'h0 && io_addr == 16'h004C) core1_run <= dbus_dat_w[0] && HAS_CORE1;
 	end
 
+	wire cpu_flip = io_write && io_block == 4'h0 && io_addr == 16'h0020 && dbus_dat_w[0];
 	always_ff @(posedge clk) begin
 		if (reset) begin
-			flip_pending <= 1'b0;
+			queued <= '0;
 			save_size <= '0;
 			audio_wr_ptr <= '0;
 		end else begin
 			if (io_write && io_block == 4'h0) begin
 				case (io_addr)
-					16'h0020: if (dbus_dat_w[0]) flip_pending <= 1'b1;
 					16'h0030: save_size <= dbus_dat_w[11:0];
 					default: begin
-						if (io_addr[15:8] == 8'h01) palette[!front][io_addr[5:2]] <= dbus_dat_w[23:0];
+						if (io_addr[15:8] == 8'h01) palette[back][io_addr[5:2]] <= dbus_dat_w[23:0];
 					end
 				endcase
 			end
+			if (gfx_pal_we) palette[back][gfx_pal_index] <= gfx_pal_rgb;
+			// A frame is queued (by the CPU or PRESENT, only with a back
+			// buffer free), the oldest one is shown at the start of a video
+			// frame (the back buffer stays the same).
+			queued <= queued + 2'((cpu_flip || gfx_flip) && !flip_pending) - 2'(frame_start && queued != 0);
 			if (audio_push) begin
 				audio_fifo[audio_wr_ptr[AUDIO_FIFO_BITS-1:0]] <= audio_push_data;
 				audio_wr_ptr <= audio_wr_ptr + 1'b1;
 			end
-			if (frame_start && flip_pending) flip_pending <= 1'b0;
 		end
 	end
 
-	logic io_read_save, io_read_shared;
+	logic io_read_save, io_read_shared, io_read_p8;
 	always_ff @(posedge clk) begin
-		io_ack <= dbus_io && !io_ack;
+		io_ack <= io_access;
 		io_read_save <= io_block == 4'h2;
 		io_read_shared <= io_block == 4'h3;
+		io_read_p8 <= io_block == 4'h4;
 		if (io_access && io_block == 4'h0) begin
 			case (io_addr)
 				16'h0000: io_rdata <= 32'h4742_3850; // "P8BG"
@@ -650,7 +779,7 @@ module pico8_soc #(
 				16'h0014: io_rdata <= {31'b0, focus};
 				16'h0018: io_rdata <= {8'b0, cart_size};
 				16'h001C: io_rdata <= frame_counter;
-				16'h0020: io_rdata <= {30'b0, front, flip_pending};
+				16'h0020: io_rdata <= {28'b0, queued, 1'b0, flip_pending};
 				16'h0024: io_rdata <= 32'(audio_count);
 				16'h0030: io_rdata <= {20'b0, save_size};
 				16'h0040: io_rdata <= {1'b0, sdram_ready && !sdram_reinit_pending && !sdram_reinit, 27'b0,
@@ -659,6 +788,9 @@ module pico8_soc #(
 				16'h0048: io_rdata <= 32'd0;  // CPU number
 				16'h004C: io_rdata <= {HAS_CORE1, 30'b0, core1_run};
 				16'h0050: io_rdata <= audio_underruns;
+				16'h0064: io_rdata <= {GFX != 0, 30'b0, gfx_busy};
+				16'h0068: io_rdata <= gfx_present_waits;
+				16'h006C: io_rdata <= gfx_presents;
 				default: io_rdata <= '0;
 			endcase
 		end
@@ -701,6 +833,15 @@ module pico8_soc #(
 	end
 
 `ifdef VERILATOR
+`ifdef TRACE_VIDEO
+	always_ff @(posedge clk) begin
+		if (frame_start) $display("[video] frame_start front %0d queued %0d back %0d", front, queued, back);
+		if (cpu_flip) $display("[video] cpu flip queued %0d back %0d", queued, back);
+		if (gfx_flip) $display("[video] gfx flip queued %0d back %0d", queued, back);
+		if (fb_cpu_we && fb_cpu_addr == 0) $display("[video] cpu fb write back %0d", back);
+		if (gfx_fb_we && gfx_fb_addr == 0) $display("[video] gfx copy start back %0d front %0d queued %0d", back, front, queued);
+	end
+`endif
 	always_ff @(posedge clk) begin
 		if (console_write) $write("%c", dbus_dat_w[7:0]);
 		if (sim_exit_write) begin
@@ -725,7 +866,7 @@ module pico8_soc #(
 			dbus_dat_r = bram_d_q;
 		end else if (io_ack) begin
 			dbus_ack = 1'b1;
-			dbus_dat_r = io_read_shared ? shared0_q : io_read_save ? save_cpu_q : io_rdata;
+			dbus_dat_r = io_read_p8 ? bram_d_q : io_read_shared ? shared0_q : io_read_save ? save_cpu_q : io_rdata;
 		end
 	end
 
@@ -772,7 +913,7 @@ module pico8_soc #(
 	always_ff @(posedge clk) begin
 		if (reset) begin
 			frame_timer <= '0;
-			front <= 1'b0;
+			front <= '0;
 			frame_counter <= '0;
 			vid_x <= '0;
 			vid_y <= 8'd128;
@@ -780,7 +921,7 @@ module pico8_soc #(
 		end else begin
 			frame_timer <= (frame_timer == FRAME_CLOCKS - 1) ? '0 : frame_timer + 1'b1;
 			if (frame_start) begin
-				if (flip_pending) front <= !front;
+				if (queued != 0) front <= front == 2'd2 ? 2'd0 : front + 1'b1;
 				vid_rotation <= rotation;
 				frame_counter <= frame_counter + 1'b1;
 				vid_x <= '0;

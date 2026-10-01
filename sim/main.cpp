@@ -216,6 +216,8 @@ int main(int argc, char **argv) {
         if (profileFrom >= 0 && frames >= profileFrom) {
 #ifndef PICO8_VEXII
             if (cycle % 997 == 0) profile[cpu->lastStagePc]++;
+#else
+            if (cycle % 997 == 0) profile[soc->vexii__DOT__profile_pc]++;
 #endif
             // SDRAM use by master (arbiter state != idle): 0 = data bus, 1 = instruction bus, 2 = host,
             // 3 = audio core data bus, 4 = audio core instruction bus

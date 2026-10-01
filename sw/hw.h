@@ -14,7 +14,7 @@
 #define REG_STATUS        IO_REG(0x0014)
 #define REG_CART_SIZE     IO_REG(0x0018)
 #define REG_FRAME_COUNT   IO_REG(0x001C)
-#define REG_VIDEO_CTRL    IO_REG(0x0020)
+#define REG_VIDEO_CTRL    IO_REG(0x0020) // Write 1: queue the back buffer. Read: frames queued << 2 | no back buffer free
 #define REG_AUDIO         IO_REG(0x0024) // Write: push sample. Read: samples queued.
 #define REG_CONSOLE       IO_REG(0x0028)
 #define REG_SIM_EXIT      IO_REG(0x002C)
@@ -26,13 +26,23 @@
 #define REG_CPU_ID        IO_REG(0x0048) // 0: main CPU, 1: audio core
 #define REG_CORE1_CTRL    IO_REG(0x004C) // Audio core. Write bit 0: run. Read: present << 31 | running
 #define REG_AUDIO_UNDERRUNS IO_REG(0x0050) // Samples played with an empty audio FIFO
+// Graphics accelerator (hdl/pico8_gfx.sv, sw/gfx.h)
+#define REG_GFX_CMD       IO_REG(0x0060) // Write: command word (waits while the FIFO is full)
+#define REG_GFX_STATUS    IO_REG(0x0064) // present << 31 | busy
+#define REG_GFX_WAITS     IO_REG(0x0068) // PRESENTs that waited for a free back buffer
+#define REG_GFX_PRESENTS  IO_REG(0x006C) // PRESENTs done
 #define REG_PALETTE(i)    IO_REG(0x0100 + 4 * (i)) // Back buffer display palette, RGB888
 
-#define FRAMEBUFFER       ((volatile uint32_t *)(IO_BASE + 0x10000)) // Back buffer, 2048 words
+#define FRAMEBUFFER       ((volatile uint32_t *)(IO_BASE + 0x10000)) // Back buffer (of 3), 2048 words
 #define SAVE_BUFFER       ((volatile uint32_t *)(IO_BASE + 0x20000)) // 1024 words
 #define SAVE_BUFFER_SIZE  4096
 #define SHARED_RAM        ((volatile uint32_t *)(IO_BASE + 0x30000)) // Shared with the audio core (uncached)
 #define SHARED_RAM_SIZE   8192
+// The PICO-8 RAM (64 KiB block RAM, uncached), where the graphics accelerator draws.
+#define PICO8_RAM         (IO_BASE + 0x40000)
+
+#define GFX_PRESENT       (1u << 31)
+#define GFX_BUSY          (1u << 0)
 
 #define SDRAM_CFG_CL3     (1u << 0)
 #define SDRAM_CFG_EXTRA(n) ((uint32_t)(n) << 1)
@@ -44,7 +54,7 @@
 #define CORE1_RUN         (1u << 0)
 #define CORE1_PRESENT     (1u << 31)
 
-#define VIDEO_CTRL_FLIP_PENDING (1u << 0)
+#define VIDEO_CTRL_FLIP_PENDING (1u << 0) // No back buffer free (2 frames queued)
 
 #define AUDIO_FIFO_SIZE   4096
 #define AUDIO_RATE        22050

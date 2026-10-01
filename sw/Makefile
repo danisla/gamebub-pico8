@@ -31,6 +31,11 @@ DEFINES += -DLUA_USE_LONGJMP
 DEFINES += -DZ8_COMPUTED_GOTO
 # The synthesizer runs on the audio core (audio_core.h), when the SoC has one.
 DEFINES += -DAUDIO_CORE
+# Extra defines, e.g. EXTRA_DEFINES=-DZ8_FIXED_SEED (fixed random and string
+# hash seeds: runs that differ in timing give the same frames, for comparing
+# them; with BUILD=build-test to keep the release build).
+EXTRA_DEFINES ?=
+DEFINES += $(EXTRA_DEFINES)
 INCLUDES := -I. -I$(FAKE08)/source -I$(FAKE08)/libs/z8lua -I$(FAKE08)/libs/lodepng \
 	-I$(FAKE08)/libs/miniz -I$(FAKE08)/libs/simpleini
 COMMON := $(ARCH) $(OPT) -g -ffunction-sections -fdata-sections -MMD -MP $(DEFINES) $(INCLUDES)

@@ -1,6 +1,8 @@
 // Simulation top: the PICO-8 SoC with an SDRAM model.
 module sim_top #(
-	parameter int CLOCK_HZ = 90_909_090
+	parameter int CLOCK_HZ = 90_909_090,
+	/// Graphics accelerator (0 to compare with the CPU drawing)
+	parameter int GFX = 1
 ) (
 	input  logic        clk,
 	input  logic        reset,
@@ -42,7 +44,7 @@ module sim_top #(
 `else
 	localparam int AUDIO_CORE = 1;
 `endif
-	pico8_soc #(.CLOCK_HZ(CLOCK_HZ), .CPU_VEXII(CPU_VEXII), .AUDIO_CORE(AUDIO_CORE)) soc (
+	pico8_soc #(.CLOCK_HZ(CLOCK_HZ), .CPU_VEXII(CPU_VEXII), .AUDIO_CORE(AUDIO_CORE), .GFX(GFX)) soc (
 		.clk(clk),
 		.clk_sdram_out(clk),
 		.reset(reset),

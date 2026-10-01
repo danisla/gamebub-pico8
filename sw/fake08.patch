@@ -1,6 +1,6 @@
 diff -ruN a/libs/z8lua/fix32.h b/libs/z8lua/fix32.h
---- a/libs/z8lua/fix32.h	2026-09-27 17:11:37.030534020 -0700
-+++ b/libs/z8lua/fix32.h	2026-09-27 17:11:37.039162000 -0700
+--- a/libs/z8lua/fix32.h	2026-10-01 07:44:25.610069673 -0700
++++ b/libs/z8lua/fix32.h	2026-10-01 07:44:25.617704505 -0700
 @@ -17,6 +17,13 @@
  #include <algorithm>   // std::min
  #include <type_traits> // std::enable_if
@@ -232,8 +232,8 @@ diff -ruN a/libs/z8lua/fix32.h b/libs/z8lua/fix32.h
  #endif
  
 diff -ruN a/libs/z8lua/lobject.c b/libs/z8lua/lobject.c
---- a/libs/z8lua/lobject.c	2026-09-27 17:11:37.031363893 -0700
-+++ b/libs/z8lua/lobject.c	2026-09-27 17:11:37.037930410 -0700
+--- a/libs/z8lua/lobject.c	2026-10-01 07:44:25.610931916 -0700
++++ b/libs/z8lua/lobject.c	2026-10-01 07:44:25.615962336 -0700
 @@ -210,6 +210,27 @@
  
  int luaO_str2d (const char *s, size_t len, lua_Number *result) {
@@ -263,8 +263,8 @@ diff -ruN a/libs/z8lua/lobject.c b/libs/z8lua/lobject.c
      return 0;
    else if (strpbrk(s, "xX"))  /* hexa? */
 diff -ruN a/libs/z8lua/lstate.c b/libs/z8lua/lstate.c
---- a/libs/z8lua/lstate.c	2026-09-27 17:11:37.031589287 -0700
-+++ b/libs/z8lua/lstate.c	2026-09-27 17:11:37.036702117 -0700
+--- a/libs/z8lua/lstate.c	2026-10-01 07:44:25.611165566 -0700
++++ b/libs/z8lua/lstate.c	2026-10-01 07:44:25.616799782 -0700
 @@ -87,6 +87,11 @@
      memcpy(buff + p, &t, sizeof(t)); p += sizeof(t); }
  
@@ -278,8 +278,8 @@ diff -ruN a/libs/z8lua/lstate.c b/libs/z8lua/lstate.c
    unsigned int h = luai_makeseed();
    int p = 0;
 diff -ruN a/libs/z8lua/luaconf.h b/libs/z8lua/luaconf.h
---- a/libs/z8lua/luaconf.h	2026-09-27 17:11:37.031976336 -0700
-+++ b/libs/z8lua/luaconf.h	2026-09-27 17:11:37.038356683 -0700
+--- a/libs/z8lua/luaconf.h	2026-10-01 07:44:25.611560880 -0700
++++ b/libs/z8lua/luaconf.h	2026-10-01 07:44:25.617028984 -0700
 @@ -597,12 +597,12 @@
  
  #define luai_hashnum(i,n) (i = (n * z8::fix32::frombits(2654435769u)).bits())
@@ -299,8 +299,8 @@ diff -ruN a/libs/z8lua/luaconf.h b/libs/z8lua/luaconf.h
  #endif
  
 diff -ruN a/libs/z8lua/lvm.c b/libs/z8lua/lvm.c
---- a/libs/z8lua/lvm.c	2026-09-27 17:11:37.032083758 -0700
-+++ b/libs/z8lua/lvm.c	2026-09-27 17:11:37.038908532 -0700
+--- a/libs/z8lua/lvm.c	2026-10-01 07:44:25.611669004 -0700
++++ b/libs/z8lua/lvm.c	2026-10-01 07:44:25.617444055 -0700
 @@ -571,9 +571,25 @@
          } \
          else { Protect(luaV_arith(L, ra, rb, rb, tm)); } }
@@ -391,13 +391,84 @@ diff -ruN a/libs/z8lua/lvm.c b/libs/z8lua/lvm.c
    /* main loop of interpreter */
    for (;;) {
      Instruction i = *(ci->u.l.savedpc++);
+diff -ruN a/libs/z8lua/trigtables.h b/libs/z8lua/trigtables.h
+--- a/libs/z8lua/trigtables.h	2026-10-01 07:44:25.611815529 -0700
++++ b/libs/z8lua/trigtables.h	2026-10-01 07:44:25.617556677 -0700
+@@ -273,6 +273,9 @@
+     0x02f5, 0x02e5, 0x02d6, 0x02c6, 0x02b7, 0x02a7, 0x0297, 0x0288, 0x0278, 0x0269, 0x0259, 0x0249, 0x023a, 0x022a, 0x021a, 0x020b,
+     0x01fb, 0x01eb, 0x01dc, 0x01cc, 0x01bc, 0x01ac, 0x019d, 0x018d, 0x017d, 0x016d, 0x015e, 0x014e, 0x013e, 0x012e, 0x011e, 0x010f,
+     0x00ff, 0x00ef, 0x00df, 0x00cf, 0x00bf, 0x00af, 0x00a0, 0x0090, 0x0080, 0x0070, 0x0060, 0x0050, 0x0040, 0x0030, 0x0020, 0x0010,
++    // The last entry (i = 0.25: sin(0.25) is -1, so 0) was missing: sin_helper()
++    // reads index 4096 for exact quarter turns (cos(0), sin(0.25), ...).
++    0x0000,
+ };
+ 
+ // This table was generated using the following PICO-8 code:
 diff -ruN a/source/graphics.cpp b/source/graphics.cpp
---- a/source/graphics.cpp	2026-09-27 17:11:37.029101552 -0700
-+++ b/source/graphics.cpp	2026-09-27 17:11:37.035870130 -0700
-@@ -130,6 +130,57 @@
+--- a/source/graphics.cpp	2026-10-01 07:44:25.608579398 -0700
++++ b/source/graphics.cpp	2026-10-01 07:44:25.615103689 -0700
+@@ -21,6 +21,35 @@
+ #include <fix32.h>
+ using namespace z8;
+ 
++#ifdef __GAMEBUB__
++#include "gfx.h"
++
++// The graphics accelerator (sw/gfx.h) draws on the screen at 0x6000, without
++// a color bitmask (the CPU draws the other cases).
++static inline bool gfxUsable(PicoRam *memory, const uint8_t *screenBuffer) {
++	return gfx::enabled && screenBuffer == memory->screenBuffer && memory->hwState.colorBitmask == 0xff;
++}
++
++static inline bool gfxUsable(PicoRam *memory, const uint8_t *screenBuffer, int command) {
++	return gfx::use(command) && gfxUsable(memory, screenBuffer);
++}
++
++// Fills minx..maxx of rows y0..y1 (clipped) with the pen: as _private_h_line
++// for each row.
++static void gfxPenRect(PicoRam *memory, int minx, int maxx, int y0, int y1) {
++	auto &drawState = memory->drawState;
++	const uint8_t col = drawState.color;
++	const uint8_t c0 = drawState.drawPaletteMap[col & 0x0f] & 0x0f;
++	const uint8_t c1 = drawState.drawPaletteMap[(col >> 4) & 0x0f] & 0x0f;
++	const uint16_t fillp = ((uint16_t)drawState.fillPattern[1] << 8) + drawState.fillPattern[0];
++	gfx::rect(minx, maxx, y0, y1, c0, c1, fillp, drawState.fillPatternTransparencyBit & 1);
++}
++
++static inline bool onScreen(int a, int b) {
++	return a >= 0 && a <= b && b < 128;
++}
++#endif
++
+ //call initialize to make sure defaults are correct
+ Graphics::Graphics(std::string fontdata, PicoRam* memory) {
+ 	_memory = memory;
+@@ -130,6 +159,79 @@
  		int nclip = (scr_y + scr_h) - drawState.clip_ye;
  		scr_h -= nclip;
  	}
++#ifdef __GAMEBUB__
++	// The fast paths below on the accelerator (a horizontally flipped sprite
++	// only with an even width: the fast path's odd width case draws a column
++	// off by one).
++	if (gfxUsable(_memory, screenBuffer, GFX_USE_SPR) && spritebuffer == _memory->spriteSheetData && spr_x >= 0 &&
++			(!flip_x || ((spr_x & 1) == 0 && (spr_w & 1) == 0 && spr_x + spr_w <= 128 && (scr_w & 1) == 0))) {
++		// Rows outside the sprite sheet are skipped, and (not flipped)
++		// columns past its right edge.
++		const int y0 = flip_y ? std::max(0, spr_y + spr_h - 128) : std::max(0, -spr_y);
++		const int y1 = flip_y ? std::min(scr_h, spr_y + spr_h) : std::min(scr_h, 128 - spr_y);
++		const int w = flip_x ? scr_w : std::min(scr_w, 128 - spr_x);
++		if (y0 >= y1 || w <= 0) {
++			return;
++		}
++		if (onScreen(scr_x, scr_x + w - 1) && onScreen(scr_y + y0, scr_y + y1 - 1)) {
++			gfx::syncPalette(drawState.drawPaletteMap);
++			gfx::spr(scr_x, scr_y + y0, w, y1 - y0, flip_x ? spr_x + spr_w - 1 : spr_x,
++				flip_y ? spr_y + spr_h - (y0 + 1) : spr_y + y0, flip_x, flip_y);
++			return;
++		}
++	}
++#endif
 +#ifndef Z8_NO_FAST_SPR
 +	if (!flip_x && hwState.colorBitmask == 0xff) {
 +		// Common case (no horizontal flip, no color bitmask): the same as the
@@ -452,7 +523,34 @@ diff -ruN a/source/graphics.cpp b/source/graphics.cpp
  	uint8_t lastScreenBuffByte = 0;
  	int lastScreenBuffIdx = -1;
  
-@@ -763,8 +814,31 @@
+@@ -636,6 +738,12 @@
+ void Graphics::cls(uint8_t color) {
+ 	color = color & 15;
+ 	uint8_t val = color << 4 | color;
++#ifdef __GAMEBUB__
++	// (Not through the palette, and also with a color bitmask.)
++	if (gfx::use(GFX_USE_RECT) && GetP8FrameBuffer() == _memory->screenBuffer) {
++		gfx::rect(0, 127, 0, 127, color, color, 0, false);
++	} else
++#endif
+ 	memset(GetP8FrameBuffer(), val, sizeof(_memory->screenBuffer));
+ 
+ 	_memory->drawState.text_x = 0;
+@@ -736,6 +844,13 @@
+ 		(int)drawState.clip_xb,
+ 		(int)drawState.clip_xe - 1);
+ 
++#ifdef __GAMEBUB__
++	if (gfxUsable(_memory, screenBuffer, GFX_USE_RECT) && onScreen(minx, maxx)) {
++		gfxPenRect(_memory, minx, maxx, y, y);
++		return;
++	}
++#endif
++
+ 	bool canmemset = hwState.colorBitmask == 0xff && 
+ 		drawState.fillPattern[0] == 0 && 
+ 		drawState.fillPattern[1] == 0 &&
+@@ -763,8 +878,31 @@
          memset(p + minx / 2, color * 0x11, (maxx - minx + 1) / 2);
  	}
  	else {
@@ -485,7 +583,21 @@ diff -ruN a/source/graphics.cpp b/source/graphics.cpp
  		}
  	}
  }
-@@ -1088,16 +1162,31 @@
+@@ -793,6 +931,13 @@
+ 		(int)drawState.clip_yb,
+ 		(int)drawState.clip_ye - 1);
+ 
++#ifdef __GAMEBUB__
++	if (gfxUsable(_memory, screenBuffer, GFX_USE_RECT) && onScreen(x, x) && onScreen(miny, maxy)) {
++		gfxPenRect(_memory, x, x, miny, maxy);
++		return;
++	}
++#endif
++
+ 	bool skipPen = hwState.colorBitmask == 0xff && 
+ 		drawState.fillPattern[0] == 0 && 
+ 		drawState.fillPattern[1] == 0;
+@@ -1088,16 +1233,31 @@
  		_safeSetPixelFromPen(ox, oy + 1);
  	}
  	else if (r > 0) {
@@ -519,7 +631,31 @@ diff -ruN a/source/graphics.cpp b/source/graphics.cpp
  	}
  }
  
-@@ -1681,12 +1770,43 @@
+@@ -1366,6 +1526,23 @@
+ 		y2 = temp;
+ 	}
+ 
++#ifdef __GAMEBUB__
++	// The rows _private_h_line draws, as one command.
++	if (gfxUsable(_memory, GetP8FrameBuffer(), GFX_USE_RECT)) {
++		const int ya = std::max(y1, (int)drawState.clip_yb);
++		const int yb = std::min(y2, (int)drawState.clip_ye - 1);
++		if (ya > yb || (x1 < drawState.clip_xb && x2 < drawState.clip_xb) ||
++				(x1 > drawState.clip_xe && x2 > drawState.clip_xe)) {
++			return;
++		}
++		const int maxx = clamp(std::max(x1, x2), (int)drawState.clip_xb, (int)drawState.clip_xe - 1);
++		const int minx = clamp(std::min(x1, x2), (int)drawState.clip_xb, (int)drawState.clip_xe - 1);
++		if (onScreen(minx, maxx) && onScreen(ya, yb)) {
++			gfxPenRect(_memory, minx, maxx, ya, yb);
++			return;
++		}
++	}
++#endif
+ 	for (int y = y1; y <= y2; y++) {
+ 		_private_h_line(x1, x2, y);
+ 	}
+@@ -1681,12 +1858,60 @@
  	// Font data is always 8 bytes per character (8 rows of 8 pixels), even if charHeight or charWidth > 8
  	// Rows/Cols beyond 8 should be blank (charHeight > 8 affects line spacing, not glyph size)
  	const int maxFontDataRows = 8;
@@ -536,6 +672,23 @@ diff -ruN a/source/graphics.cpp b/source/graphics.cpp
 +		const int x1 = std::min(cols, (int)drawState.clip_xe - x);
 +		const int y0 = std::max(0, (int)drawState.clip_yb - y);
 +		const int y1 = std::min(rows, (int)drawState.clip_ye - y);
++#ifdef __GAMEBUB__
++		if (gfx::use(GFX_USE_GLYPH) && screenBuffer == _memory->screenBuffer) {
++			// The clipped bitmap on the accelerator.
++			if (x0 < x1 && y0 < y1) {
++				const uint8_t colMask = (uint8_t)(((1u << x1) - 1) & ~((1u << x0) - 1));
++				uint64_t bitmap = 0;
++				for (int relDestY = y0; relDestY < y1; relDestY++) {
++					bitmap |= (uint64_t)(chBytes[relDestY] & colMask) << (relDestY * 8);
++				}
++				if (bitmap) {
++					gfx::glyph(x, y, fgColor, bitmap);
++				}
++			}
++			std::tuple<int, int> retVal (extraCharWidth, extraCharHeight);
++			return retVal;
++		}
++#endif
 +		for (int relDestY = y0; relDestY < y1; relDestY++) {
 +			const uint8_t bits = chBytes[relDestY];
 +			if (!bits) continue;
@@ -566,7 +719,7 @@ diff -ruN a/source/graphics.cpp b/source/graphics.cpp
  			if ((fontRow >= maxFontDataRows || fontCol >= maxFontDataRows)) {
  				continue;
  			}
-@@ -1818,70 +1938,64 @@
+@@ -1818,70 +2043,64 @@
  }
  
  
@@ -689,7 +842,7 @@ diff -ruN a/source/graphics.cpp b/source/graphics.cpp
  	}
  }
  
-@@ -1890,9 +2004,20 @@
+@@ -1890,9 +2109,20 @@
  }
  
  void Graphics::map(int celx, int cely, int sx, int sy, int celw, int celh, uint8_t layer) {
@@ -713,10 +866,435 @@ diff -ruN a/source/graphics.cpp b/source/graphics.cpp
  			if (cell && ((layer == 0) || (fget(cell) & layer))) {
  				spr(cell, sx + x * 8, sy + y * 8);
  			}
+diff -ruN a/source/Input.cpp b/source/Input.cpp
+--- a/source/Input.cpp	2026-10-01 07:44:25.608200344 -0700
++++ b/source/Input.cpp	2026-10-01 07:44:25.614518187 -0700
+@@ -6,7 +6,13 @@
+ 
+ Input::Input(PicoRam* memory):
+     _currentKDown(0),
+-    _currentKHeld(0)
++    _currentKHeld(0),
++    // (Were left uninitialized: stat(30) returned garbage until stat(31) was
++    // read, and the mouse state without a mouse.)
++    _mouseX(0),
++    _mouseY(0),
++    _mouseBtnState(0),
++    _kbDown(false)
+ {
+     _memory = memory;
+ 
+diff -ruN a/source/p8GlobalLuaFunctions.h b/source/p8GlobalLuaFunctions.h
+--- a/source/p8GlobalLuaFunctions.h	2026-10-01 07:44:25.608884131 -0700
++++ b/source/p8GlobalLuaFunctions.h	2026-10-01 07:44:25.614137270 -0700
+@@ -24,18 +24,7 @@
+ __z8_persist_delay = 0
+ __z8_cart_running = false
+ 
+-function all(c)
+-    if (c==nil or #c==0) return function() end
+-    local i,prev = 1,nil
+-    return function()
+-        -- increment unless the current value changed
+-        if (c[i]==prev) i+=1
+-        -- skip until non-nil or end of table
+-        while (i<=#c and c[i]==nil) i+=1
+-        prev=c[i]
+-        return prev
+-    end
+-end
++-- all() is in C (picoluaapi.cpp).
+ 
+ function foreach(c, f)
+      for v in all(c) do f(v) end
+diff -ruN a/source/picoluaapi.cpp b/source/picoluaapi.cpp
+--- a/source/picoluaapi.cpp	2026-10-01 07:44:25.608916292 -0700
++++ b/source/picoluaapi.cpp	2026-10-01 07:44:25.614806470 -0700
+@@ -19,6 +19,34 @@
+   #include <lauxlib.h>
+ //}
+ 
++#include <type_traits>
++
++// lua_tonumber() returns a fix32, which the functions below mostly assign to
++// int variables: implicitly, that goes through operator double (soft float on
++// the Game Bub: fix32 -> double -> int, ~4% of a busy cart's time). The
++// argument converts to integer types directly instead, with the same result
++// as through double: truncated toward zero, and a negative number to a 32-bit
++// unsigned type is 0 (as RISC-V's soft float conversion; casts with
++// (int) use fix32's own conversion, which floors: those call lua_tonumberx).
++namespace {
++struct LuaNumberArg {
++    fix32 v;
++    operator fix32() const { return v; }
++    operator double() const { return (double)v; }
++    template <typename T, typename std::enable_if<std::is_integral<T>::value, int>::type = 0>
++    operator T() const {
++        const int32_t bits = v.bits();
++        int32_t t = bits >> 16;
++        if (bits < 0 && (bits & 0xffff)) t++;
++        if (std::is_same<T, bool>::value) return bits != 0;
++        if (std::is_unsigned<T>::value && sizeof(T) >= sizeof(int32_t) && t < 0) return T(0);
++        return T(t);
++    }
++};
++}
++#undef lua_tonumber
++#define lua_tonumber(L, i) (LuaNumberArg{lua_tonumberx(L, i, NULL)})
++
+ Graphics* _graphicsForLuaApi;
+ Input* _inputForLuaApi;
+ Vm* _vmForLuaApi;
+@@ -818,7 +846,7 @@
+ }
+ 
+ int stat(lua_State *L) {
+-    int n = (int)lua_tonumber(L, 1);
++    int n = (int)lua_tonumberx(L, 1, NULL);
+ 
+     switch(n){
+         //0 memory usage
+@@ -1032,11 +1060,11 @@
+     int n = lua_tonumber(L,1);
+     int fadems = 0;
+     if (lua_gettop(L) > 1) {
+-        fadems = (int)lua_tonumber(L, 2);
++        fadems = (int)lua_tonumberx(L, 2, NULL);
+     }
+     int channelmask = 0;
+     if (lua_gettop(L) > 2) {
+-        channelmask = (int)lua_tonumber(L, 3);
++        channelmask = (int)lua_tonumberx(L, 3, NULL);
+     }
+ 
+     _audioForLuaApi->api_music(n, fadems, channelmask);
+@@ -1047,15 +1075,15 @@
+     fix32 n = lua_tonumber(L,1);
+     int channel = -1;
+     if (lua_gettop(L) > 1) {
+-        channel = (int)lua_tonumber(L, 2);
++        channel = (int)lua_tonumberx(L, 2, NULL);
+     }
+     int offset = 0;
+     if (lua_gettop(L) > 2) {
+-        offset = (int)lua_tonumber(L, 3);
++        offset = (int)lua_tonumberx(L, 3, NULL);
+     }
+     int length = -1;
+     if (lua_gettop(L) > 3) {
+-        length = (int)lua_tonumber(L, 4);
++        length = (int)lua_tonumberx(L, 4, NULL);
+     }
+ 
+     int result = _audioForLuaApi->api_sfx((int)n, channel, offset, length);
+@@ -1542,3 +1570,244 @@
+ 	
+ 	return 1;
+ }
++
++// all(c): iterates over the non-nil values of c[1..#c], going on correctly
++// when the current value is deleted. The same as fake-08's Lua version
++// (p8GlobalLuaFunctions.h had it), in C as in PICO-8: the Lua iterator was
++// ~25% of the time of carts looping over their objects with all().
++//   if c==nil or #c==0 then return function() end
++//   local i,prev = 1,nil
++//   return function()
++//     if c[i]==prev then i+=1 end
++//     while i<=#c and c[i]==nil do i+=1 end
++//     prev=c[i]
++//     return prev
++//   end
++static int all_empty(lua_State *L) {
++    return 0;
++}
++
++static int all_iter(lua_State *L) {
++    const int c = lua_upvalueindex(1), iu = lua_upvalueindex(2), prevu = lua_upvalueindex(3);
++    fix32 i = lua_tonumberx(L, iu, NULL);
++    if (lua_type(L, c) == LUA_TTABLE && !lua_getmetatable(L, c)) {
++        // A plain table: raw accesses (what c[i] and #c are without a
++        // metatable).
++        lua_rawgeti(L, c, (int)i);
++        if (lua_compare(L, -1, prevu, LUA_OPEQ)) i = i + fix32(1);
++        lua_pop(L, 1);
++        const fix32 n = fix32((int)lua_rawlen(L, c));
++        for (;;) {
++            lua_rawgeti(L, c, (int)i);
++            if (!(i <= n) || !lua_isnil(L, -1)) break;
++            lua_pop(L, 1);
++            i = i + fix32(1);
++        }
++    } else {
++        // Any value: with metamethods (__index, __len, __eq, __le).
++        lua_pushnumber(L, i);
++        lua_gettable(L, c);
++        if (lua_compare(L, -1, prevu, LUA_OPEQ)) i = i + fix32(1);
++        lua_pop(L, 1);
++        for (;;) {
++            lua_pushnumber(L, i);
++            lua_len(L, c);
++            const bool in = lua_compare(L, -2, -1, LUA_OPLE);
++            lua_pop(L, 2);
++            lua_pushnumber(L, i);
++            lua_gettable(L, c);
++            if (!in || !lua_isnil(L, -1)) break;
++            lua_pop(L, 1);
++            i = i + fix32(1);
++        }
++    }
++    // c[i] (the new prev) is on the top.
++    lua_pushnumber(L, i);
++    lua_replace(L, iu);
++    lua_pushvalue(L, -1);
++    lua_replace(L, prevu);
++    return 1;
++}
++
++int all(lua_State *L) {
++    if (lua_isnoneornil(L, 1)) {
++        lua_pushcfunction(L, all_empty);
++        return 1;
++    }
++    lua_len(L, 1);
++    lua_pushnumber(L, fix32(0));
++    const bool empty = lua_compare(L, -2, -1, LUA_OPEQ);
++    lua_pop(L, 2);
++    if (empty) {
++        lua_pushcfunction(L, all_empty);
++        return 1;
++    }
++    lua_settop(L, 1);
++    lua_pushnumber(L, fix32(1));
++    lua_pushnil(L);
++    lua_pushcclosure(L, all_iter, 3);
++    return 1;
++}
++
++// count, foreach, add, del, deli: fake-08 has them in Lua
++// (p8GlobalLuaFunctions.h), which costs up to ~8% of a cart's Lua time
++// (count, foreach in Celeste; deli in Dinky Kong). installTableHelpers()
++// replaces each with a C function for the common case (a table without a
++// metatable, the usual argument types), with the same results as the Lua
++// version; any other case calls the Lua version (upvalue 1), for its exact
++// behavior and error messages.
++namespace {
++
++int callLuaVersion(lua_State *L) {
++    const int n = lua_gettop(L);
++    lua_pushvalue(L, lua_upvalueindex(1));
++    lua_insert(L, 1);
++    lua_call(L, n, LUA_MULTRET);
++    return lua_gettop(L);
++}
++
++// A table without a metatable (raw accesses are what c[i] and #c do), and
++// short enough for fix32 indices.
++bool plainTable(lua_State *L, int idx, int *n) {
++    if (lua_type(L, idx) != LUA_TTABLE) return false;
++    if (lua_getmetatable(L, idx)) {
++        lua_pop(L, 1);
++        return false;
++    }
++    size_t len = lua_rawlen(L, idx);
++    if (len >= 32767) return false;
++    *n = (int)len;
++    return true;
++}
++
++// PICO-8 mid(x, y, z) (lpico8lib.c).
++fix32 mid3(fix32 x, fix32 y, fix32 z) {
++    return x > y ? y > z ? y : fix32::min(x, z) : x > z ? x : fix32::min(y, z);
++}
++
++// The index argument of add/deli: absent (nil or false) or a number.
++bool indexArg(lua_State *L, int idx, bool *given, fix32 *i) {
++    const int t = lua_type(L, idx);
++    if (t <= LUA_TNIL || (t == LUA_TBOOLEAN && !lua_toboolean(L, idx))) {
++        *given = false;
++        return true;
++    }
++    if (t != LUA_TNUMBER) return false;
++    *given = true;
++    *i = fix32::floor(lua_tonumberx(L, idx, NULL));  // i\1
++    return true;
++}
++
++//   local cnt,max = 0,#c
++//   for i=1,max do if (c[i] != nil) cnt+=1 end      (v == nil)
++//   for i=1,max do if (c[i] == v) cnt+=1 end        (else)
++int count_c(lua_State *L) {
++    int n;
++    if (!plainTable(L, 1, &n)) return callLuaVersion(L);
++    const bool any = lua_isnoneornil(L, 2);
++    lua_settop(L, 2);
++    int cnt = 0;
++    for (int i = 1; i <= n; i++) {
++        lua_rawgeti(L, 1, i);
++        if (any ? !lua_isnil(L, -1) : lua_compare(L, -1, 2, LUA_OPEQ)) cnt++;
++        lua_pop(L, 1);
++    }
++    lua_pushnumber(L, fix32(cnt));
++    return 1;
++}
++
++//   for v in all(c) do f(v) end
++int foreach_c(lua_State *L) {
++    if (!lua_isfunction(L, 2)) return callLuaVersion(L);
++    lua_settop(L, 2);
++    lua_pushcfunction(L, all);
++    lua_pushvalue(L, 1);
++    lua_call(L, 1, 1);  // the iterator (3)
++    for (;;) {
++        lua_pushvalue(L, 3);
++        lua_call(L, 0, 1);
++        if (lua_isnil(L, -1)) break;
++        lua_pushvalue(L, 2);
++        lua_insert(L, -2);
++        lua_call(L, 1, 0);
++    }
++    return 0;
++}
++
++//   i=i and mid(1,i\1,#c+1) or #c+1
++//   for j=#c,i,-1 do c[j+1]=c[j] end
++//   c[i]=x
++//   return x
++int add_c(lua_State *L) {
++    int n;
++    bool given;
++    fix32 i;
++    if (!plainTable(L, 1, &n) || !indexArg(L, 3, &given, &i)) return callLuaVersion(L);
++    lua_settop(L, 2);
++    const int at = (int)(given ? mid3(fix32(1), i, fix32(n + 1)) : fix32(n + 1));
++    for (int j = n; j >= at; j--) {
++        lua_rawgeti(L, 1, j);
++        lua_rawseti(L, 1, j + 1);
++    }
++    lua_pushvalue(L, 2);
++    lua_rawseti(L, 1, at);
++    return 1;  // x
++}
++
++//   local max = #c
++//   for i=1,max do
++//     if c[i]==v then
++//       for j=i,max do c[j]=c[j+1] end
++//       return v
++//     end
++//   end
++int del_c(lua_State *L) {
++    int n;
++    if (!plainTable(L, 1, &n)) return callLuaVersion(L);
++    lua_settop(L, 2);
++    for (int i = 1; i <= n; i++) {
++        lua_rawgeti(L, 1, i);
++        const bool found = lua_compare(L, -1, 2, LUA_OPEQ);
++        lua_pop(L, 1);
++        if (found) {
++            for (int j = i; j <= n; j++) {
++                lua_rawgeti(L, 1, j + 1);
++                lua_rawseti(L, 1, j);
++            }
++            return 1;  // v
++        }
++    }
++    return 0;
++}
++
++//   i=i and mid(1,i\1,#c) or #c
++//   local v=c[i]
++//   for j=i,#c do c[j]=c[j+1] end
++//   return v
++int deli_c(lua_State *L) {
++    int n;
++    bool given;
++    fix32 i;
++    if (!plainTable(L, 1, &n) || !indexArg(L, 2, &given, &i)) return callLuaVersion(L);
++    lua_settop(L, 1);
++    const int at = (int)(given ? mid3(fix32(1), i, fix32(n)) : fix32(n));
++    lua_rawgeti(L, 1, at);  // v
++    for (int j = at; j <= n; j++) {
++        lua_rawgeti(L, 1, j + 1);
++        lua_rawseti(L, 1, j);
++    }
++    return 1;
++}
++
++}  // namespace
++
++void installTableHelpers(lua_State *L) {
++    const struct { const char *name; lua_CFunction f; } helpers[] = {
++        {"count", count_c}, {"foreach", foreach_c}, {"add", add_c}, {"del", del_c}, {"deli", deli_c},
++    };
++    for (auto &h : helpers) {
++        lua_getglobal(L, h.name);  // the Lua version
++        lua_pushcclosure(L, h.f, 1);
++        lua_setglobal(L, h.name);
++    }
++}
+diff -ruN a/source/picoluaapi.h b/source/picoluaapi.h
+--- a/source/picoluaapi.h	2026-10-01 07:44:25.608948482 -0700
++++ b/source/picoluaapi.h	2026-10-01 07:44:25.614844211 -0700
+@@ -122,6 +122,10 @@
+ //system functions
+ 
+ int rnd(lua_State *L);
++int all(lua_State *L);
++// count, foreach, add, del, deli in C (after the bios is loaded: the Lua
++// versions are their fallback).
++void installTableHelpers(lua_State *L);
+ int srand(lua_State *L);
+ int _update_buttons(lua_State *L);
+ int run(lua_State *L);
 diff -ruN a/source/vm.cpp b/source/vm.cpp
---- a/source/vm.cpp	2026-09-27 17:11:37.029655846 -0700
-+++ b/source/vm.cpp	2026-09-27 17:11:37.035292562 -0700
-@@ -1019,6 +1019,12 @@
+--- a/source/vm.cpp	2026-10-01 07:44:25.609145503 -0700
++++ b/source/vm.cpp	2026-10-01 07:44:25.614867695 -0700
+@@ -149,6 +149,8 @@
+ 
+     //rng
+     lua_register(luaState, "rnd", rnd);
++    // (Was in Lua: p8GlobalLuaFunctions.h)
++    lua_register(luaState, "all", all);
+     lua_register(luaState, "srand", srand);
+ 
+     //load in global lua fuctions for pico 8- part of this is setting a local variable
+@@ -166,6 +168,7 @@
+ 
+         return false;
+     }
++    installTableHelpers(luaState);
+ 
+     // Push the eris.init_persist_all function on the top of the lua stack (or nil if it doesn't exist)
+     // we call this function to establish the default global state of things not to save in the save state
+@@ -286,8 +289,13 @@
+     _memory->Reset();
+ 
+     //seed rng
++#if defined(Z8_FIXED_SEED)
++    // Tests: the same random numbers whatever the timing.
++    api_srand(fix32::frombits(0x12345678));
++#else
+     auto now = std::chrono::high_resolution_clock::now();
+     api_srand(fix32::frombits((int32_t)now.time_since_epoch().count()));
++#endif
+ 
+     //set graphics state
+     _graphics->color();
+@@ -353,8 +361,13 @@
+     _memory->Reset();
+ 
+     //seed rng
++#if defined(Z8_FIXED_SEED)
++    // Tests: the same random numbers whatever the timing.
++    api_srand(fix32::frombits(0x12345678));
++#else
+     auto now = std::chrono::high_resolution_clock::now();
+     api_srand(fix32::frombits((int32_t)now.time_since_epoch().count()));
++#endif
+ 
+     //set graphics state
+     _graphics->color();
+@@ -1019,6 +1032,12 @@
      _memory->data[addr + 3] = (uint8_t)(ubits >> 24);
  }
  
@@ -729,9 +1307,23 @@ diff -ruN a/source/vm.cpp b/source/vm.cpp
  bool Vm::vm_cartdata(string key) {
      //match pico 8 errors
      if (key.length() == 0 || key.length() > 64) {
+@@ -1280,8 +1299,13 @@
+     _memory->Reset();
+ 
+     //seed rng
++#if defined(Z8_FIXED_SEED)
++    // Tests: the same random numbers whatever the timing.
++    api_srand(fix32::frombits(0x12345678));
++#else
+     auto now = std::chrono::high_resolution_clock::now();
+     api_srand(fix32::frombits((int32_t)now.time_since_epoch().count()));
++#endif
+ 
+     //set graphics state
+     _graphics->color();
 diff -ruN a/source/vm.h b/source/vm.h
---- a/source/vm.h	2026-09-27 17:11:37.029693416 -0700
-+++ b/source/vm.h	2026-09-27 17:11:37.035845744 -0700
+--- a/source/vm.h	2026-10-01 07:44:25.609181731 -0700
++++ b/source/vm.h	2026-10-01 07:44:25.615076879 -0700
 @@ -113,6 +113,10 @@
      bool IsPaused();
  
