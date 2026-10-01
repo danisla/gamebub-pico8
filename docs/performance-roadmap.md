@@ -323,6 +323,21 @@ Plan, cheapest first:
 
 **Done:**
 
+* **The Lua VM is compiled with optimization.** Upstream z8lua had
+  `__attribute__((optimize("O0")))` on `luaV_execute` (no reason recorded),
+  so the interpreter loop ran unoptimized on every build, the device
+  included: 2.4-5x the instructions of stock Lua 5.2 per VM operation
+  (`sim/audiocmp/vmbench.py`: microbenchmarks against stock Lua). Optimized,
+  it's on par with stock Lua (0.8-1.06x), and real carts take 1.4-2.7x fewer
+  instructions per frame (native: poom 2.71x, Dinky Kong 1.91x, Praxis
+  Fighter 1.75x, porklike 1.72x, Celeste 1.66x, Beckon 1.43x). Same screens
+  and audio on all carts (switch and computed goto dispatch), test carts
+  pass, and ASan + UBSan report nothing on all carts.
+* Fix (z8lua): the sandbox fallbacks in `OP_GETTABUP`/`OP_GETTABLE` (API
+  functions found when a cart replaces `_ENV`) wrote their result through
+  `ra` computed before a call that can reallocate the Lua stack: with an
+  `__index` metamethod that grows the stack, the result was lost
+  (`sim/carts/envtest.p8`: "attempt to call global 'flr'").
 * `all()` in C (`picoluaapi.cpp`; fake-08 had it in Lua: a Lua closure call,
   3 table reads and up to 2 `#c` per element). Praxis Fighter X (a heavy,
   object-heavy cart) spent ~25% of its Lua time in it: 17.6% fewer
@@ -432,4 +447,4 @@ functions, pick the top ones; every change checked for identical output
 | 2a. Graphics accelerator | first version: simulated (same frames, ~5-20% less CPU time), Vivado timing no worse than before (still slightly short in the CPUs, as before); needs a hardware test |
 | 2b. Lua VM helpers | not started |
 | 2c. Arithmetic helpers | API argument conversions done (software); divider planned |
-| 3. Software | `all`, `count`, `foreach`, `add`, `del`, `deli` in C; trig table and input initialization fixes |
+| 3. Software | Lua VM optimized (was -O0); `all`, `count`, `foreach`, `add`, `del`, `deli` in C; trig table, input initialization and sandbox fallback fixes |

@@ -1,6 +1,6 @@
 diff -ruN a/libs/z8lua/fix32.h b/libs/z8lua/fix32.h
---- a/libs/z8lua/fix32.h	2026-10-01 07:44:25.610069673 -0700
-+++ b/libs/z8lua/fix32.h	2026-10-01 07:44:25.617704505 -0700
+--- a/libs/z8lua/fix32.h	2026-10-01 08:36:42.750453640 -0700
++++ b/libs/z8lua/fix32.h	2026-10-01 08:36:42.758382920 -0700
 @@ -17,6 +17,13 @@
  #include <algorithm>   // std::min
  #include <type_traits> // std::enable_if
@@ -232,8 +232,8 @@ diff -ruN a/libs/z8lua/fix32.h b/libs/z8lua/fix32.h
  #endif
  
 diff -ruN a/libs/z8lua/lobject.c b/libs/z8lua/lobject.c
---- a/libs/z8lua/lobject.c	2026-10-01 07:44:25.610931916 -0700
-+++ b/libs/z8lua/lobject.c	2026-10-01 07:44:25.615962336 -0700
+--- a/libs/z8lua/lobject.c	2026-10-01 08:36:42.751265067 -0700
++++ b/libs/z8lua/lobject.c	2026-10-01 08:36:42.756410409 -0700
 @@ -210,6 +210,27 @@
  
  int luaO_str2d (const char *s, size_t len, lua_Number *result) {
@@ -263,8 +263,8 @@ diff -ruN a/libs/z8lua/lobject.c b/libs/z8lua/lobject.c
      return 0;
    else if (strpbrk(s, "xX"))  /* hexa? */
 diff -ruN a/libs/z8lua/lstate.c b/libs/z8lua/lstate.c
---- a/libs/z8lua/lstate.c	2026-10-01 07:44:25.611165566 -0700
-+++ b/libs/z8lua/lstate.c	2026-10-01 07:44:25.616799782 -0700
+--- a/libs/z8lua/lstate.c	2026-10-01 08:36:42.751513825 -0700
++++ b/libs/z8lua/lstate.c	2026-10-01 08:36:42.757241543 -0700
 @@ -87,6 +87,11 @@
      memcpy(buff + p, &t, sizeof(t)); p += sizeof(t); }
  
@@ -278,8 +278,8 @@ diff -ruN a/libs/z8lua/lstate.c b/libs/z8lua/lstate.c
    unsigned int h = luai_makeseed();
    int p = 0;
 diff -ruN a/libs/z8lua/luaconf.h b/libs/z8lua/luaconf.h
---- a/libs/z8lua/luaconf.h	2026-10-01 07:44:25.611560880 -0700
-+++ b/libs/z8lua/luaconf.h	2026-10-01 07:44:25.617028984 -0700
+--- a/libs/z8lua/luaconf.h	2026-10-01 08:36:42.751909249 -0700
++++ b/libs/z8lua/luaconf.h	2026-10-01 08:36:42.757465504 -0700
 @@ -597,12 +597,12 @@
  
  #define luai_hashnum(i,n) (i = (n * z8::fix32::frombits(2654435769u)).bits())
@@ -299,8 +299,8 @@ diff -ruN a/libs/z8lua/luaconf.h b/libs/z8lua/luaconf.h
  #endif
  
 diff -ruN a/libs/z8lua/lvm.c b/libs/z8lua/lvm.c
---- a/libs/z8lua/lvm.c	2026-10-01 07:44:25.611669004 -0700
-+++ b/libs/z8lua/lvm.c	2026-10-01 07:44:25.617444055 -0700
+--- a/libs/z8lua/lvm.c	2026-10-01 08:36:42.752028534 -0700
++++ b/libs/z8lua/lvm.c	2026-10-01 08:36:42.757955195 -0700
 @@ -571,9 +571,25 @@
          } \
          else { Protect(luaV_arith(L, ra, rb, rb, tm)); } }
@@ -327,7 +327,20 @@ diff -ruN a/libs/z8lua/lvm.c b/libs/z8lua/lvm.c
  
  //turn off optimizations for this method.
  //OP_FORLOOP doesn't correctly detect wrapping in certain cases if optimization is on and aggressive
-@@ -594,6 +610,63 @@
+@@ -581,7 +597,11 @@
+ [[clang::optnone]]
+ void luaV_execute (lua_State *L) {
+ #elif __GNUC__
+-void __attribute__((optimize("O0"))) luaV_execute (lua_State *L) {
++// (Was compiled with __attribute__((optimize("O0"))), without a recorded
++// reason: ~2-5x the instructions per VM instruction. Optimized, it gives the
++// same results; the sandbox fallbacks below now recompute `ra` after
++// Protect(), which can reallocate the stack.)
++void luaV_execute (lua_State *L) {
+ #else
+ void luaV_execute (lua_State *L) {
+ #endif
+@@ -594,6 +614,63 @@
    cl = clLvalue(ci->func);
    k = cl->p->k;
    base = ci->u.l.base;
@@ -391,9 +404,25 @@ diff -ruN a/libs/z8lua/lvm.c b/libs/z8lua/lvm.c
    /* main loop of interpreter */
    for (;;) {
      Instruction i = *(ci->u.l.savedpc++);
+@@ -637,6 +714,7 @@
+       vmcase(OP_GETTABUP,
+         int b = GETARG_B(i);
+         Protect(luaV_gettable(L, cl->upvals[b]->v, RKC(i), ra));
++        ra = RA(i);  /* the stack may have been reallocated */
+         // ATTN: I don't think this is actually what PICO-8 does, but I'm not sure
+         // what PICO-8 is actually doing, and this appears to make carts compatible.
+         // Essentially the behavior I observed in Ex-Terra was that the _ENV was modified
+@@ -659,6 +737,7 @@
+       )
+       vmcase(OP_GETTABLE,
+         Protect(luaV_gettable(L, RB(i), RKC(i), ra));
++        ra = RA(i);  /* the stack may have been reallocated */
+         // When _ENV is overridden (e.g., in a for loop), lookups use OP_GETTABLE instead of OP_GETTABUP
+         // We need to check the sandbox fallback here as well
+         if (ttisnil(ra) && ttisstring(RKC(i)) && ttistable(RB(i))) {
 diff -ruN a/libs/z8lua/trigtables.h b/libs/z8lua/trigtables.h
---- a/libs/z8lua/trigtables.h	2026-10-01 07:44:25.611815529 -0700
-+++ b/libs/z8lua/trigtables.h	2026-10-01 07:44:25.617556677 -0700
+--- a/libs/z8lua/trigtables.h	2026-10-01 08:36:42.752164860 -0700
++++ b/libs/z8lua/trigtables.h	2026-10-01 08:36:42.758147567 -0700
 @@ -273,6 +273,9 @@
      0x02f5, 0x02e5, 0x02d6, 0x02c6, 0x02b7, 0x02a7, 0x0297, 0x0288, 0x0278, 0x0269, 0x0259, 0x0249, 0x023a, 0x022a, 0x021a, 0x020b,
      0x01fb, 0x01eb, 0x01dc, 0x01cc, 0x01bc, 0x01ac, 0x019d, 0x018d, 0x017d, 0x016d, 0x015e, 0x014e, 0x013e, 0x012e, 0x011e, 0x010f,
@@ -405,8 +434,8 @@ diff -ruN a/libs/z8lua/trigtables.h b/libs/z8lua/trigtables.h
  
  // This table was generated using the following PICO-8 code:
 diff -ruN a/source/graphics.cpp b/source/graphics.cpp
---- a/source/graphics.cpp	2026-10-01 07:44:25.608579398 -0700
-+++ b/source/graphics.cpp	2026-10-01 07:44:25.615103689 -0700
+--- a/source/graphics.cpp	2026-10-01 08:36:42.748587920 -0700
++++ b/source/graphics.cpp	2026-10-01 08:36:42.755510105 -0700
 @@ -21,6 +21,35 @@
  #include <fix32.h>
  using namespace z8;
@@ -867,8 +896,8 @@ diff -ruN a/source/graphics.cpp b/source/graphics.cpp
  				spr(cell, sx + x * 8, sy + y * 8);
  			}
 diff -ruN a/source/Input.cpp b/source/Input.cpp
---- a/source/Input.cpp	2026-10-01 07:44:25.608200344 -0700
-+++ b/source/Input.cpp	2026-10-01 07:44:25.614518187 -0700
+--- a/source/Input.cpp	2026-10-01 08:36:42.748125660 -0700
++++ b/source/Input.cpp	2026-10-01 08:36:42.754596225 -0700
 @@ -6,7 +6,13 @@
  
  Input::Input(PicoRam* memory):
@@ -885,8 +914,8 @@ diff -ruN a/source/Input.cpp b/source/Input.cpp
      _memory = memory;
  
 diff -ruN a/source/p8GlobalLuaFunctions.h b/source/p8GlobalLuaFunctions.h
---- a/source/p8GlobalLuaFunctions.h	2026-10-01 07:44:25.608884131 -0700
-+++ b/source/p8GlobalLuaFunctions.h	2026-10-01 07:44:25.614137270 -0700
+--- a/source/p8GlobalLuaFunctions.h	2026-10-01 08:36:42.749023720 -0700
++++ b/source/p8GlobalLuaFunctions.h	2026-10-01 08:36:42.754213565 -0700
 @@ -24,18 +24,7 @@
  __z8_persist_delay = 0
  __z8_cart_running = false
@@ -908,8 +937,8 @@ diff -ruN a/source/p8GlobalLuaFunctions.h b/source/p8GlobalLuaFunctions.h
  function foreach(c, f)
       for v in all(c) do f(v) end
 diff -ruN a/source/picoluaapi.cpp b/source/picoluaapi.cpp
---- a/source/picoluaapi.cpp	2026-10-01 07:44:25.608916292 -0700
-+++ b/source/picoluaapi.cpp	2026-10-01 07:44:25.614806470 -0700
+--- a/source/picoluaapi.cpp	2026-10-01 08:36:42.749083743 -0700
++++ b/source/picoluaapi.cpp	2026-10-01 08:36:42.755007840 -0700
 @@ -19,6 +19,34 @@
    #include <lauxlib.h>
  //}
@@ -1233,8 +1262,8 @@ diff -ruN a/source/picoluaapi.cpp b/source/picoluaapi.cpp
 +    }
 +}
 diff -ruN a/source/picoluaapi.h b/source/picoluaapi.h
---- a/source/picoluaapi.h	2026-10-01 07:44:25.608948482 -0700
-+++ b/source/picoluaapi.h	2026-10-01 07:44:25.614844211 -0700
+--- a/source/picoluaapi.h	2026-10-01 08:36:42.749142704 -0700
++++ b/source/picoluaapi.h	2026-10-01 08:36:42.755068945 -0700
 @@ -122,6 +122,10 @@
  //system functions
  
@@ -1247,8 +1276,8 @@ diff -ruN a/source/picoluaapi.h b/source/picoluaapi.h
  int _update_buttons(lua_State *L);
  int run(lua_State *L);
 diff -ruN a/source/vm.cpp b/source/vm.cpp
---- a/source/vm.cpp	2026-10-01 07:44:25.609145503 -0700
-+++ b/source/vm.cpp	2026-10-01 07:44:25.614867695 -0700
+--- a/source/vm.cpp	2026-10-01 08:36:42.749504204 -0700
++++ b/source/vm.cpp	2026-10-01 08:36:42.755110172 -0700
 @@ -149,6 +149,8 @@
  
      //rng
@@ -1322,8 +1351,8 @@ diff -ruN a/source/vm.cpp b/source/vm.cpp
      //set graphics state
      _graphics->color();
 diff -ruN a/source/vm.h b/source/vm.h
---- a/source/vm.h	2026-10-01 07:44:25.609181731 -0700
-+++ b/source/vm.h	2026-10-01 07:44:25.615076879 -0700
+--- a/source/vm.h	2026-10-01 08:36:42.749568565 -0700
++++ b/source/vm.h	2026-10-01 08:36:42.755467044 -0700
 @@ -113,6 +113,10 @@
      bool IsPaused();
  
