@@ -116,10 +116,19 @@ faster per clock but only meets timing at 76.9 MHz; an FPU would save ~2%.
 * **Divide**: `fix32` division goes through `__divdi3` (64-bit software
   division, ~1.7% on Dinky Kong), see item 3; the hardware `div` latency
   matters once that uses it.
-* **Fmax**: the CPU path is ~0.25 ns short at 111.1 MHz and ~0.55 ns at
-  125 MHz. Floorplanning (pblock for the CPU), `--relaxed-*` options, or
-  retiming the worst paths could make 125 MHz "within timing" (the
-  experimental core then becomes the release one: ~12% faster).
+* **Fmax (125 MHz as the release clock, ~12% faster):** the SoC paths were
+  pipelined (the accelerator's FIFO head, `busy`/`ready` and sprite
+  addresses; CPU palette, log and audio FIFO writes; one more video stage;
+  host save buffer reads): 125 MHz went from 1451 failing endpoints (-457 ns
+  total) to 501 (-121 ns), and 111.1 MHz to -0.05 ns (SDRAM capture only).
+  Left at 125 MHz: both CPUs (fetch L1 -0.80 ns, GShare -0.72, aligner,
+  decode: VexiiRiscv `--relaxed-*` options, smaller BTB/GShare, a lighter
+  audio core CPU, or pblocks), the SDRAM read capture (-1.42 ns: the I/O
+  constraints use estimated board delays; the hardware phase sweep showed
+  ±2.5 ns of margin at 125 MHz), and a little SoC logic (block RAM output to
+  the sprite palette lookup -0.45 ns, CPU writes to the PICO-8 RAM -0.42).
+  To list the failing endpoints by module: open the routed checkpoint in
+  Vivado and `get_timing_paths -max_paths 3000 -slack_lesser_than 0`.
 
 **Steps:** (1) add cache / branch counters in the simulation, (2) try each
 flag alone on Dinky Kong + Beckon (regenerate, `make vexii`, profile),

@@ -9,4 +9,5 @@ obj_dir/Vhost_top: host_top.sv mmcm_stub.sv host_main.cpp ../sdram_model.sv $(GE
 		--top-module host_top -CFLAGS "-O2 -std=c++17" \
 		host_top.sv mmcm_stub.sv ../sdram_model.sv $(GEN)/HandheldPico8.sv $(GEN)/Mmcm.sv \
 		$(ROOT)/hdl/pico8_gamebub.sv $(ROOT)/hdl/pico8_soc.sv $(ROOT)/hdl/pico8_sdram.sv \
+		$(ROOT)/hdl/pico8_gfx.sv $(ROOT)/hdl/vexii_adapter.sv $(ROOT)/hdl/vexiiriscv/VexiiRiscv.v \
 		$(ROOT)/hdl/vexriscv/VexRiscv_Pico8.v host_main.cpp

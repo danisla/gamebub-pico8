@@ -78,30 +78,62 @@ module pico8_gfx #(
 	localparam logic [3:0] OP_PAL = 4'd1, OP_SPR = 4'd2, OP_RECT = 4'd3, OP_PRESENT = 4'd4, OP_GLYPH = 4'd5;
 	localparam logic [13:0] SCREEN = 14'h1800;  // 0x6000 / 4
 
+	typedef enum logic [4:0] {
+		S_IDLE,
+		S_PAL1, S_PAL2,
+		S_SPR1, S_SPR2, S_SPR3, S_SPR_A, S_SPR_B, S_SPR_D, S_SPR_W,
+		S_RECT1, S_RECT_R, S_RECT_W,
+		S_COPY, S_COPY_LAST, S_PALETTE,
+		S_GLY1, S_GLY2, S_GLY_R, S_GLY_W
+	} state_t;
+
 	////////////////////////////////////////////////////////////////////////
-	// Command FIFO (distributed RAM)
+	// Command FIFO (distributed RAM), with the first word in a register
+	// (head). For timing, cmd_ready and busy are registered and a little
+	// pessimistic: busy may stay set a cycle longer, cmd_ready drops a word
+	// early (the CPU can't push on consecutive cycles).
 	////////////////////////////////////////////////////////////////////////
 
 	localparam int DEPTH = 1 << FIFO_BITS;
 	logic [31:0] fifo [0:DEPTH-1];
-	logic [FIFO_BITS:0] wr_ptr, rd_ptr;
-	wire [FIFO_BITS:0] count = wr_ptr - rd_ptr;
-	wire [31:0] head = fifo[rd_ptr[FIFO_BITS-1:0]];
-	logic pop;
+	logic [FIFO_BITS:0] wr_ptr, rd_ptr;  // RAM: written at wr_ptr, read into head at rd_ptr
+	logic [FIFO_BITS:0] ram_count;      // words in the RAM (not counting head)
+	logic [31:0] head;
+	logic        head_valid;
+	logic        pop;
+	logic        ready_q, busy_q;
+	wire         push = cmd_valid && cmd_ready;
+	wire         ram_empty = ram_count == 0;
+	// head is consumed (pop), or empty: load the next word from the RAM.
+	wire         load = !ram_empty && (pop || !head_valid);
+	state_t      state;
 
-	assign cmd_ready = count != DEPTH;
+	assign cmd_ready = ready_q;
+	assign busy = busy_q;
 	always_ff @(posedge clk) begin
-		if (cmd_valid && cmd_ready) fifo[wr_ptr[FIFO_BITS-1:0]] <= cmd_data;
+		if (push) fifo[wr_ptr[FIFO_BITS-1:0]] <= cmd_data;
+		if (load) head <= fifo[rd_ptr[FIFO_BITS-1:0]];
 		if (reset) begin
 			wr_ptr <= '0;
 			rd_ptr <= '0;
+			ram_count <= '0;
+			head_valid <= 1'b0;
+			ready_q <= 1'b0;
+			busy_q <= 1'b0;
 		end else begin
-			if (cmd_valid && cmd_ready) wr_ptr <= wr_ptr + 1'b1;
-			if (pop) rd_ptr <= rd_ptr + 1'b1;
+			if (push) wr_ptr <= wr_ptr + 1'b1;
+			if (load) rd_ptr <= rd_ptr + 1'b1;
+			ram_count <= ram_count + (FIFO_BITS+1)'(push) - (FIFO_BITS+1)'(load);
+			if (load) head_valid <= 1'b1;
+			else if (pop) head_valid <= 1'b0;
+			ready_q <= ram_count <= (FIFO_BITS+1)'(DEPTH - 2);
+			busy_q <= state != S_IDLE || head_valid || !ram_empty || push;
 		end
 	end
 
 	wire [3:0] head_op = head[31:28];
+	// The whole command is in the FIFO (head and the rest in the RAM).
+	logic cmd_complete;
 	logic [4:0] head_len;
 	always_comb begin
 		case (head_op)
@@ -110,23 +142,13 @@ module pico8_gfx #(
 			OP_PRESENT: head_len = 5'd17;
 			default: head_len = 5'd1;
 		endcase
+		cmd_complete = head_valid && ram_count >= (FIFO_BITS+1)'(head_len - 5'd1);
 	end
 
 	////////////////////////////////////////////////////////////////////////
 	// Command state
 	////////////////////////////////////////////////////////////////////////
 
-	typedef enum logic [4:0] {
-		S_IDLE,
-		S_PAL1, S_PAL2,
-		S_SPR1, S_SPR2, S_SPR_A, S_SPR_B, S_SPR_D, S_SPR_W,
-		S_RECT1, S_RECT_R, S_RECT_W,
-		S_COPY, S_COPY_LAST, S_PALETTE,
-		S_GLY1, S_GLY2, S_GLY_R, S_GLY_W
-	} state_t;
-	state_t state;
-
-	assign busy = state != S_IDLE || count != 0;
 	assign mem_active = state != S_IDLE;
 
 	// Draw palette
@@ -156,20 +178,31 @@ module pico8_gfx #(
 
 	// Destination x range of the current command (x0..x1).
 	wire [6:0] spr_x1 = dst_x + last_x[6:0];
-	wire [6:0] dy = dst_y + j;
-	wire [6:0] sy = fy ? src_y - j : src_y + j;
 	wire [3:0] wd_first = dst_x[6:3];
 	wire [3:0] wd_last = spr_x1[6:3];
-	// Source pixel of destination pixel 0 of the word, and the source words.
+	// Source pixel of destination pixel 0 of the word, and the source words
+	// (spr_addrs):
 	//   no flip: sx(p) = wd * 8 + p + (src_x - dst_x): lowest is p = 0
 	//   flip:    sx(p) = src_x + dst_x - wd * 8 - p: lowest is p = 7
-	wire signed [9:0] sx_lo = fx ? $signed({3'b0, src_x}) + $signed({3'b0, dst_x}) - $signed({3'b0, wd, 3'b0}) - 10'sd7
-	                               : $signed({3'b0, wd, 3'b0}) + $signed({3'b0, src_x}) - $signed({3'b0, dst_x});
-	wire [3:0] src_word0 = sx_lo[6:3];       // modulo the row: out of row words are for masked pixels
-	wire [3:0] src_word1 = src_word0 + 1'b1;
-	wire [2:0] src_shift = sx_lo[2:0];
-	wire [13:0] src_row = base + {sy, 4'b0};
-	wire [13:0] dst_word = SCREEN + {dy, 4'b0} + wd;
+	// Source words modulo the row: out of row words are for masked pixels.
+
+	// For timing, the addresses of a destination word are computed the state
+	// before they're used (S_SPR3 for the first word, S_SPR_W for the next).
+	logic [13:0] spr_addr0, spr_addr1, spr_addrd;
+	logic [2:0]  spr_shift;
+	function automatic logic [44:0] spr_addrs(logic [3:0] w, logic [6:0] r);
+		logic signed [9:0] lo;
+		logic [6:0] yy, ys;
+		logic [13:0] row;
+		lo = fx ? $signed({3'b0, src_x}) + $signed({3'b0, dst_x}) - $signed({3'b0, w, 3'b0}) - 10'sd7
+		        : $signed({3'b0, w, 3'b0}) + $signed({3'b0, src_x}) - $signed({3'b0, dst_x});
+		ys = fy ? src_y - r : src_y + r;
+		yy = dst_y + r;
+		row = base + {ys, 4'b0};
+		return {lo[2:0], row + 14'(lo[6:3]), row + 14'(4'(lo[6:3] + 1'b1)), SCREEN + {yy, 4'b0} + 14'(w)};
+	endfunction
+	wire [3:0] wd_next = wd != wd_last ? wd + 1'b1 : wd_first;
+	wire [6:0] j_next = wd != wd_last ? j : j + 1'b1;
 
 	// Pixel p of the destination word is in the command's x range.
 	logic [7:0] x_mask;
@@ -185,7 +218,7 @@ module pico8_gfx #(
 	logic [31:0] spr_col;
 	logic [7:0]  spr_wm;
 	wire [63:0] src_pair = {mem_rdata, src_word0_q};
-	wire [31:0] src_pix = 32'(src_pair >> {src_shift, 2'b00});
+	wire [31:0] src_pix = 32'(src_pair >> {spr_shift, 2'b00});
 
 	////////////////////////////////////////////////////////////////////////
 	// RECT datapath
@@ -236,17 +269,17 @@ module pico8_gfx #(
 
 	always_comb begin
 		pop = 1'b0;
-		mem_addr = dst_word;
+		mem_addr = spr_addrd;
 		mem_we = 1'b0;
 		mem_wdata = merge(mem_rdata, spr_col, spr_wm);
 		case (state)
 			// PRESENT waits for a free back buffer (flip_pending counts this
 			// PRESENT's flip from 2 cycles after: wait while it's in flight).
-			S_IDLE: pop = count != 0 && count >= head_len && !(head_op == OP_PRESENT && (flip_pending || flip));
+			S_IDLE: pop = cmd_complete && !(head_op == OP_PRESENT && (flip_pending || flip));
 			S_PAL1, S_PAL2, S_SPR1, S_SPR2, S_RECT1, S_PALETTE, S_GLY1, S_GLY2: pop = 1'b1;
-			S_SPR_A: mem_addr = src_row + src_word0;
-			S_SPR_B: mem_addr = src_row + src_word1;
-			S_SPR_D: mem_addr = dst_word;
+			S_SPR_A: mem_addr = spr_addr0;
+			S_SPR_B: mem_addr = spr_addr1;
+			S_SPR_D: mem_addr = spr_addrd;
 			S_SPR_W: mem_we = 1'b1;
 			S_RECT_R: begin
 				mem_addr = rect_word;
@@ -288,7 +321,7 @@ module pico8_gfx #(
 			for (int c = 0; c < 16; c++) pal_col[c] <= 4'(c);
 		end else begin
 			// Counted once per waiting PRESENT.
-			if (state == S_IDLE && count != 0 && count >= head_len && head_op == OP_PRESENT && flip_pending && !flip) begin
+			if (state == S_IDLE && cmd_complete && head_op == OP_PRESENT && flip_pending && !flip) begin
 				if (!present_waiting) present_waits <= present_waits + 1'b1;
 				present_waiting <= 1'b1;
 			end
@@ -342,6 +375,10 @@ module pico8_gfx #(
 					src_y <= head[14:8];
 					j <= '0;
 					wd <= dst_x[6:3];
+					state <= S_SPR3;
+				end
+				S_SPR3: begin
+					{spr_shift, spr_addr0, spr_addr1, spr_addrd} <= spr_addrs(wd, j);
 					state <= S_SPR_A;
 				end
 				S_SPR_A: state <= S_SPR_B;
@@ -360,13 +397,10 @@ module pico8_gfx #(
 				end
 				S_SPR_W: begin
 					state <= S_SPR_A;
-					if (wd != wd_last) begin
-						wd <= wd + 1'b1;
-					end else begin
-						wd <= wd_first;
-						j <= j + 1'b1;
-						if (j == last_y[6:0]) state <= S_IDLE;
-					end
+					wd <= wd_next;
+					j <= j_next;
+					{spr_shift, spr_addr0, spr_addr1, spr_addrd} <= spr_addrs(wd_next, j_next);
+					if (wd == wd_last && j == last_y[6:0]) state <= S_IDLE;
 				end
 				S_RECT1: begin
 					dst_x <= head[6:0];

@@ -631,16 +631,20 @@ module pico8_soc #(
 		save_cpu_q <= save_buffer[dbus_adr[9:0]];
 	end
 
-	logic save_host_pending;
+	// (The read data is registered twice, for timing to the framework.)
+	logic save_host_pending, save_host_pending2;
+	logic [31:0] save_host_q;
 	always_ff @(posedge clk) begin
 		host_save_done <= 1'b0;
 		save_host_pending <= 1'b0;
-		if (host_save_enable && !host_save_done && !save_host_pending) begin
+		save_host_pending2 <= save_host_pending;
+		if (host_save_enable && !host_save_done && !save_host_pending && !save_host_pending2) begin
 			if (host_save_write) save_buffer[host_save_address[11:2]] <= host_save_wdata;
 			save_host_pending <= 1'b1;
 		end
-		if (save_host_pending) host_save_done <= 1'b1;
-		host_save_rdata <= save_buffer[host_save_address[11:2]];
+		if (save_host_pending2) host_save_done <= 1'b1;
+		save_host_q <= save_buffer[host_save_address[11:2]];
+		host_save_rdata <= save_host_q;
 	end
 
 	// Audio FIFO
@@ -649,10 +653,16 @@ module pico8_soc #(
 	logic [AUDIO_FIFO_BITS:0] audio_wr_ptr, audio_rd_ptr;
 	wire [AUDIO_FIFO_BITS:0] audio_count = audio_wr_ptr - audio_rd_ptr;
 	// Samples are pushed by either CPU (by one at a time, see sw/audio_core.cpp).
+	// The request is registered first (timing), then written unless full.
 	wire audio_push0 = io_write && io_block == 4'h0 && io_addr == 16'h0024;
 	wire audio_push1 = io1_write && io1_block == 4'h0 && io1_addr == 16'h0024;
-	wire audio_push = (audio_push0 || audio_push1) && !audio_count[AUDIO_FIFO_BITS];
-	wire [15:0] audio_push_data = audio_push1 ? dbus1_dat_w[15:0] : dbus_dat_w[15:0];
+	logic        audio_push_req;
+	logic [15:0] audio_push_data;
+	always_ff @(posedge clk) begin
+		audio_push_req <= audio_push0 || audio_push1;
+		audio_push_data <= audio_push1 ? dbus1_dat_w[15:0] : dbus_dat_w[15:0];
+	end
+	wire audio_push = audio_push_req && !audio_count[AUDIO_FIFO_BITS];
 	// Samples played while the FIFO was empty (while the core runs).
 	logic [31:0] audio_underruns;
 
@@ -662,12 +672,17 @@ module pico8_soc #(
 	// Log buffer: the first 16 KiB of console output since the core was
 	// loaded, saved by the host as a file. (Not cleared when the CPU is held in
 	// reset: the host halts the core before saving the files.)
+	// (Writes registered first, for timing.)
 	logic [7:0] log_buffer [0:16383];
+	logic       log_write;
+	logic [7:0] log_data;
 	always_ff @(posedge clk) begin
+		log_write <= console_write;
+		log_data <= dbus_dat_w[7:0];
 		if (reset) begin
 			log_size <= '0;
-		end else if (console_write && !log_size[14]) begin
-			log_buffer[log_size[13:0]] <= dbus_dat_w[7:0];
+		end else if (log_write && !log_size[14]) begin
+			log_buffer[log_size[13:0]] <= log_data;
 			log_size <= log_size + 1'b1;
 		end
 	end
@@ -734,6 +749,14 @@ module pico8_soc #(
 	end
 
 	wire cpu_flip = io_write && io_block == 4'h0 && io_addr == 16'h0020 && dbus_dat_w[0];
+	logic        pal_cpu_we;
+	logic [3:0]  pal_cpu_index;
+	logic [23:0] pal_cpu_rgb;
+	always_ff @(posedge clk) begin
+		pal_cpu_we <= io_write && io_block == 4'h0 && io_addr[15:8] == 8'h01;
+		pal_cpu_index <= io_addr[5:2];
+		pal_cpu_rgb <= dbus_dat_w[23:0];
+	end
 	always_ff @(posedge clk) begin
 		if (reset) begin
 			queued <= '0;
@@ -743,12 +766,13 @@ module pico8_soc #(
 			if (io_write && io_block == 4'h0) begin
 				case (io_addr)
 					16'h0030: save_size <= dbus_dat_w[11:0];
-					default: begin
-						if (io_addr[15:8] == 8'h01) palette[back][io_addr[5:2]] <= dbus_dat_w[23:0];
-					end
+					default: ;
 				endcase
 			end
-			if (gfx_pal_we) palette[back][gfx_pal_index] <= gfx_pal_rgb;
+			// Palette writes: the CPU's registered first (timing); the CPU
+			// doesn't write it while the accelerator runs PRESENT.
+			if (pal_cpu_we) palette[back][pal_cpu_index] <= pal_cpu_rgb;
+			else if (gfx_pal_we) palette[back][gfx_pal_index] <= gfx_pal_rgb;
 			// A frame is queued (by the CPU or PRESENT, only with a back
 			// buffer free), the oldest one is shown at the start of a video
 			// frame (the back buffer stays the same).
@@ -937,11 +961,12 @@ module pico8_soc #(
 		end
 	end
 
-	// Pipeline: framebuffer read, palette lookup.
+	// Pipeline: framebuffer read, pixel select, palette lookup.
 	logic [31:0] fb_q;
-	logic        s1_active, s2_active;
-	logic        s1_hblank, s2_hblank;
-	logic        s1_vblank, s2_vblank;
+	logic [3:0]  s2_pixel;
+	logic        s1_active, s2_active, s3_active;
+	logic        s1_hblank, s2_hblank, s3_hblank;
+	logic        s1_vblank, s2_vblank, s3_vblank;
 	logic [2:0]  s1_x;
 	wire active = vid_y < 8'd128 && vid_x < 8'd128;
 	// PICO-8 pixel shown at (vid_x, vid_y). Rotated, each output pixel is in
@@ -973,11 +998,16 @@ module pico8_soc #(
 		s2_active <= s1_active;
 		s2_hblank <= s1_hblank;
 		s2_vblank <= s1_vblank;
-		{pixel_r, pixel_g, pixel_b} <= palette[front][fb_q[s1_x*4 +: 4]];
+		s2_pixel <= fb_q[s1_x*4 +: 4];
+
+		s3_active <= s2_active;
+		s3_hblank <= s2_hblank;
+		s3_vblank <= s2_vblank;
+		{pixel_r, pixel_g, pixel_b} <= palette[front][s2_pixel];
 	end
-	assign pixel_valid = s2_active;
-	assign hblank = s2_hblank;
-	assign vblank = s2_vblank;
+	assign pixel_valid = s3_active;
+	assign hblank = s3_hblank;
+	assign vblank = s3_vblank;
 
 	////////////////////////////////////////////////////////////////////////
 	// Audio output
