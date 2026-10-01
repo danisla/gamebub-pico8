@@ -333,6 +333,15 @@ Plan, cheapest first:
   Fighter 1.75x, porklike 1.72x, Celeste 1.66x, Beckon 1.43x). Same screens
   and audio on all carts (switch and computed goto dispatch), test carts
   pass, and ASan + UBSan report nothing on all carts.
+* **The sandbox fallback only applies to `_ENV`** (z8lua, `lvm.c`). It
+  looked every missing string key of *any* table up in the cart's sandbox,
+  creating the `"__PICO8_SANDBOX"` string each time: a missing field named
+  like an API function returned that function (`e.flip`, `e.t` -> `time`,
+  `cfg.line`: PICO-8 gives nil), and Praxis Fighter spent ~18% of its time
+  creating that string. Now only for the upvalue `_ENV` or a local `_ENV`
+  (by its debug name, checked after the sandbox lookup), with the strings
+  created once: Praxis Fighter 6.36M -> 5.19M x86 instructions per frame
+  (native), the same screens and audio on all carts.
 * Fix (z8lua): the sandbox fallbacks in `OP_GETTABUP`/`OP_GETTABLE` (API
   functions found when a cart replaces `_ENV`) wrote their result through
   `ra` computed before a call that can reallocate the Lua stack: with an

@@ -1,6 +1,6 @@
 diff -ruN a/libs/z8lua/fix32.h b/libs/z8lua/fix32.h
---- a/libs/z8lua/fix32.h	2026-10-01 08:36:42.750453640 -0700
-+++ b/libs/z8lua/fix32.h	2026-10-01 08:36:42.758382920 -0700
+--- a/libs/z8lua/fix32.h	2026-10-01 10:20:02.422228845 -0700
++++ b/libs/z8lua/fix32.h	2026-10-01 10:20:02.429910581 -0700
 @@ -17,6 +17,13 @@
  #include <algorithm>   // std::min
  #include <type_traits> // std::enable_if
@@ -232,8 +232,8 @@ diff -ruN a/libs/z8lua/fix32.h b/libs/z8lua/fix32.h
  #endif
  
 diff -ruN a/libs/z8lua/lobject.c b/libs/z8lua/lobject.c
---- a/libs/z8lua/lobject.c	2026-10-01 08:36:42.751265067 -0700
-+++ b/libs/z8lua/lobject.c	2026-10-01 08:36:42.756410409 -0700
+--- a/libs/z8lua/lobject.c	2026-10-01 10:20:02.423097942 -0700
++++ b/libs/z8lua/lobject.c	2026-10-01 10:20:02.428099721 -0700
 @@ -210,6 +210,27 @@
  
  int luaO_str2d (const char *s, size_t len, lua_Number *result) {
@@ -263,8 +263,8 @@ diff -ruN a/libs/z8lua/lobject.c b/libs/z8lua/lobject.c
      return 0;
    else if (strpbrk(s, "xX"))  /* hexa? */
 diff -ruN a/libs/z8lua/lstate.c b/libs/z8lua/lstate.c
---- a/libs/z8lua/lstate.c	2026-10-01 08:36:42.751513825 -0700
-+++ b/libs/z8lua/lstate.c	2026-10-01 08:36:42.757241543 -0700
+--- a/libs/z8lua/lstate.c	2026-10-01 10:20:02.423337924 -0700
++++ b/libs/z8lua/lstate.c	2026-10-01 10:20:02.428975520 -0700
 @@ -87,6 +87,11 @@
      memcpy(buff + p, &t, sizeof(t)); p += sizeof(t); }
  
@@ -277,9 +277,32 @@ diff -ruN a/libs/z8lua/lstate.c b/libs/z8lua/lstate.c
    char buff[4 * sizeof(size_t)];
    unsigned int h = luai_makeseed();
    int p = 0;
+@@ -191,6 +196,10 @@
+   /* pre-create memory-error message */
+   g->memerrmsg = luaS_newliteral(L, MEMERRMSG);
+   luaS_fix(g->memerrmsg);  /* it should never be collected */
++  g->envname = luaS_newliteral(L, LUA_ENV);
++  luaS_fix(g->envname);
++  g->sandboxkey = luaS_newliteral(L, "__PICO8_SANDBOX");
++  luaS_fix(g->sandboxkey);
+   g->gcrunning = 1;  /* allow gc */
+   g->version = lua_version(NULL);
+   luai_userstateopen(L);
+diff -ruN a/libs/z8lua/lstate.h b/libs/z8lua/lstate.h
+--- a/libs/z8lua/lstate.h	2026-10-01 10:20:02.423366858 -0700
++++ b/libs/z8lua/lstate.h	2026-10-01 10:20:02.429247683 -0700
+@@ -144,6 +144,8 @@
+   struct lua_State *mainthread;
+   const lua_Number *version;  /* pointer to version number */
+   TString *memerrmsg;  /* memory-error message */
++  TString *envname;  /* "_ENV" (z8lua sandbox fallback, lvm.c) */
++  TString *sandboxkey;  /* "__PICO8_SANDBOX" (registry key, lvm.c) */
+   TString *tmname[TM_N];  /* array with tag-method names */
+   struct Table *mt[LUA_NUMTAGS];  /* metatables for basic types */
+ } global_State;
 diff -ruN a/libs/z8lua/luaconf.h b/libs/z8lua/luaconf.h
---- a/libs/z8lua/luaconf.h	2026-10-01 08:36:42.751909249 -0700
-+++ b/libs/z8lua/luaconf.h	2026-10-01 08:36:42.757465504 -0700
+--- a/libs/z8lua/luaconf.h	2026-10-01 10:20:02.423751452 -0700
++++ b/libs/z8lua/luaconf.h	2026-10-01 10:20:02.429215593 -0700
 @@ -597,12 +597,12 @@
  
  #define luai_hashnum(i,n) (i = (n * z8::fix32::frombits(2654435769u)).bits())
@@ -299,8 +322,8 @@ diff -ruN a/libs/z8lua/luaconf.h b/libs/z8lua/luaconf.h
  #endif
  
 diff -ruN a/libs/z8lua/lvm.c b/libs/z8lua/lvm.c
---- a/libs/z8lua/lvm.c	2026-10-01 08:36:42.752028534 -0700
-+++ b/libs/z8lua/lvm.c	2026-10-01 08:36:42.757955195 -0700
+--- a/libs/z8lua/lvm.c	2026-10-01 10:20:02.423877640 -0700
++++ b/libs/z8lua/lvm.c	2026-10-01 10:20:02.429634101 -0700
 @@ -571,9 +571,25 @@
          } \
          else { Protect(luaV_arith(L, ra, rb, rb, tm)); } }
@@ -327,11 +350,32 @@ diff -ruN a/libs/z8lua/lvm.c b/libs/z8lua/lvm.c
  
  //turn off optimizations for this method.
  //OP_FORLOOP doesn't correctly detect wrapping in certain cases if optimization is on and aggressive
-@@ -581,7 +597,11 @@
+@@ -581,7 +597,32 @@
  [[clang::optnone]]
  void luaV_execute (lua_State *L) {
  #elif __GNUC__
 -void __attribute__((optimize("O0"))) luaV_execute (lua_State *L) {
++
++/*
++** z8lua sandbox fallback (OP_GETTABUP, OP_GETTABLE): a global missing from a
++** cart's own _ENV is looked up in the cart's sandbox (the API functions).
++*/
++static const TValue *sandboxget (lua_State *L, const TValue *key) {
++  const TValue *sandbox = luaH_getstr(hvalue(&G(L)->l_registry), G(L)->sandboxkey);
++  if (ttistable(sandbox)) {
++    const TValue *res = luaH_get(hvalue(sandbox), key);
++    if (!ttisnil(res))
++      return res;
++  }
++  return NULL;
++}
++
++/* Register 'reg' is the local variable _ENV at the current instruction. */
++static int isenvlocal (lua_State *L, const Proto *p, int reg, CallInfo *ci) {
++  const char *name = luaF_getlocalname(p, reg + 1, pcRel(ci->u.l.savedpc, p));
++  return name != NULL && strcmp(name, LUA_ENV) == 0;
++}
++
 +// (Was compiled with __attribute__((optimize("O0"))), without a recorded
 +// reason: ~2-5x the instructions per VM instruction. Optimized, it gives the
 +// same results; the sandbox fallbacks below now recompute `ra` after
@@ -340,7 +384,7 @@ diff -ruN a/libs/z8lua/lvm.c b/libs/z8lua/lvm.c
  #else
  void luaV_execute (lua_State *L) {
  #endif
-@@ -594,6 +614,63 @@
+@@ -594,6 +635,63 @@
    cl = clLvalue(ci->func);
    k = cl->p->k;
    base = ci->u.l.base;
@@ -404,7 +448,7 @@ diff -ruN a/libs/z8lua/lvm.c b/libs/z8lua/lvm.c
    /* main loop of interpreter */
    for (;;) {
      Instruction i = *(ci->u.l.savedpc++);
-@@ -637,6 +714,7 @@
+@@ -637,6 +735,7 @@
        vmcase(OP_GETTABUP,
          int b = GETARG_B(i);
          Protect(luaV_gettable(L, cl->upvals[b]->v, RKC(i), ra));
@@ -412,17 +456,52 @@ diff -ruN a/libs/z8lua/lvm.c b/libs/z8lua/lvm.c
          // ATTN: I don't think this is actually what PICO-8 does, but I'm not sure
          // what PICO-8 is actually doing, and this appears to make carts compatible.
          // Essentially the behavior I observed in Ex-Terra was that the _ENV was modified
-@@ -659,6 +737,7 @@
+@@ -645,32 +744,23 @@
+         // an allowlist or something. Again, not really sure, don't really love this 
+         // solution, but I guess it works for now.
+         // Note that this was observed in Jan 2026, PICO-8 version 0.2.7, Ex-Terra dated 2024-09-23 fucntion called draw_gbullets_old
+-        if (ttisnil(ra) && ttisstring(RKC(i))) {
+-          Table *reg = hvalue(&G(L)->l_registry);
+-          TString *sandboxKey = luaS_newliteral(L, "__PICO8_SANDBOX");
+-          const TValue *sandbox = luaH_getstr(reg, sandboxKey);
+-          if (ttistable(sandbox)) {
+-            const TValue *sandboxRes = luaH_get(hvalue(sandbox), RKC(i));
+-            if (!ttisnil(sandboxRes)) {
+-              setobj2s(L, ra, sandboxRes);
+-            }
+-          }
++        // (Only for _ENV: a field of another table named like an API
++        // function is nil, as in PICO-8.)
++        if (ttisnil(ra) && ttisstring(RKC(i)) && cl->p->upvalues[b].name == G(L)->envname) {
++          const TValue *res = sandboxget(L, RKC(i));
++          if (res) setobj2s(L, ra, res);
+         }
        )
        vmcase(OP_GETTABLE,
          Protect(luaV_gettable(L, RB(i), RKC(i), ra));
 +        ra = RA(i);  /* the stack may have been reallocated */
          // When _ENV is overridden (e.g., in a for loop), lookups use OP_GETTABLE instead of OP_GETTABUP
          // We need to check the sandbox fallback here as well
++        // (Only when the table is a local variable named _ENV: checked
++        // after the sandbox lookup, which is cheaper and usually fails.)
          if (ttisnil(ra) && ttisstring(RKC(i)) && ttistable(RB(i))) {
+-          Table *reg = hvalue(&G(L)->l_registry);
+-          TString *sandboxKey = luaS_newliteral(L, "__PICO8_SANDBOX");
+-          const TValue *sandbox = luaH_getstr(reg, sandboxKey);
+-          if (ttistable(sandbox)) {
+-            const TValue *sandboxRes = luaH_get(hvalue(sandbox), RKC(i));
+-            if (!ttisnil(sandboxRes)) {
+-              setobj2s(L, ra, sandboxRes);
+-            }
+-          }
++          const TValue *res = sandboxget(L, RKC(i));
++          if (res && isenvlocal(L, cl->p, GETARG_B(i), ci)) setobj2s(L, ra, res);
+         }
+       )
+       vmcase(OP_SETTABUP,
 diff -ruN a/libs/z8lua/trigtables.h b/libs/z8lua/trigtables.h
---- a/libs/z8lua/trigtables.h	2026-10-01 08:36:42.752164860 -0700
-+++ b/libs/z8lua/trigtables.h	2026-10-01 08:36:42.758147567 -0700
+--- a/libs/z8lua/trigtables.h	2026-10-01 10:20:02.424020539 -0700
++++ b/libs/z8lua/trigtables.h	2026-10-01 10:20:02.429753586 -0700
 @@ -273,6 +273,9 @@
      0x02f5, 0x02e5, 0x02d6, 0x02c6, 0x02b7, 0x02a7, 0x0297, 0x0288, 0x0278, 0x0269, 0x0259, 0x0249, 0x023a, 0x022a, 0x021a, 0x020b,
      0x01fb, 0x01eb, 0x01dc, 0x01cc, 0x01bc, 0x01ac, 0x019d, 0x018d, 0x017d, 0x016d, 0x015e, 0x014e, 0x013e, 0x012e, 0x011e, 0x010f,
@@ -434,8 +513,8 @@ diff -ruN a/libs/z8lua/trigtables.h b/libs/z8lua/trigtables.h
  
  // This table was generated using the following PICO-8 code:
 diff -ruN a/source/graphics.cpp b/source/graphics.cpp
---- a/source/graphics.cpp	2026-10-01 08:36:42.748587920 -0700
-+++ b/source/graphics.cpp	2026-10-01 08:36:42.755510105 -0700
+--- a/source/graphics.cpp	2026-10-01 10:20:02.420230562 -0700
++++ b/source/graphics.cpp	2026-10-01 10:20:02.427199326 -0700
 @@ -21,6 +21,35 @@
  #include <fix32.h>
  using namespace z8;
@@ -896,8 +975,8 @@ diff -ruN a/source/graphics.cpp b/source/graphics.cpp
  				spr(cell, sx + x * 8, sy + y * 8);
  			}
 diff -ruN a/source/Input.cpp b/source/Input.cpp
---- a/source/Input.cpp	2026-10-01 08:36:42.748125660 -0700
-+++ b/source/Input.cpp	2026-10-01 08:36:42.754596225 -0700
+--- a/source/Input.cpp	2026-10-01 10:20:02.419609582 -0700
++++ b/source/Input.cpp	2026-10-01 10:20:02.426567335 -0700
 @@ -6,7 +6,13 @@
  
  Input::Input(PicoRam* memory):
@@ -914,8 +993,8 @@ diff -ruN a/source/Input.cpp b/source/Input.cpp
      _memory = memory;
  
 diff -ruN a/source/p8GlobalLuaFunctions.h b/source/p8GlobalLuaFunctions.h
---- a/source/p8GlobalLuaFunctions.h	2026-10-01 08:36:42.749023720 -0700
-+++ b/source/p8GlobalLuaFunctions.h	2026-10-01 08:36:42.754213565 -0700
+--- a/source/p8GlobalLuaFunctions.h	2026-10-01 10:20:02.420750701 -0700
++++ b/source/p8GlobalLuaFunctions.h	2026-10-01 10:20:02.426157674 -0700
 @@ -24,18 +24,7 @@
  __z8_persist_delay = 0
  __z8_cart_running = false
@@ -937,8 +1016,8 @@ diff -ruN a/source/p8GlobalLuaFunctions.h b/source/p8GlobalLuaFunctions.h
  function foreach(c, f)
       for v in all(c) do f(v) end
 diff -ruN a/source/picoluaapi.cpp b/source/picoluaapi.cpp
---- a/source/picoluaapi.cpp	2026-10-01 08:36:42.749083743 -0700
-+++ b/source/picoluaapi.cpp	2026-10-01 08:36:42.755007840 -0700
+--- a/source/picoluaapi.cpp	2026-10-01 10:20:02.420820603 -0700
++++ b/source/picoluaapi.cpp	2026-10-01 10:20:02.426881647 -0700
 @@ -19,6 +19,34 @@
    #include <lauxlib.h>
  //}
@@ -1262,8 +1341,8 @@ diff -ruN a/source/picoluaapi.cpp b/source/picoluaapi.cpp
 +    }
 +}
 diff -ruN a/source/picoluaapi.h b/source/picoluaapi.h
---- a/source/picoluaapi.h	2026-10-01 08:36:42.749142704 -0700
-+++ b/source/picoluaapi.h	2026-10-01 08:36:42.755068945 -0700
+--- a/source/picoluaapi.h	2026-10-01 10:20:02.420877671 -0700
++++ b/source/picoluaapi.h	2026-10-01 10:20:02.426919949 -0700
 @@ -122,6 +122,10 @@
  //system functions
  
@@ -1276,8 +1355,8 @@ diff -ruN a/source/picoluaapi.h b/source/picoluaapi.h
  int _update_buttons(lua_State *L);
  int run(lua_State *L);
 diff -ruN a/source/vm.cpp b/source/vm.cpp
---- a/source/vm.cpp	2026-10-01 08:36:42.749504204 -0700
-+++ b/source/vm.cpp	2026-10-01 08:36:42.755110172 -0700
+--- a/source/vm.cpp	2026-10-01 10:20:02.421224914 -0700
++++ b/source/vm.cpp	2026-10-01 10:20:02.426946710 -0700
 @@ -149,6 +149,8 @@
  
      //rng
@@ -1351,8 +1430,8 @@ diff -ruN a/source/vm.cpp b/source/vm.cpp
      //set graphics state
      _graphics->color();
 diff -ruN a/source/vm.h b/source/vm.h
---- a/source/vm.h	2026-10-01 08:36:42.749568565 -0700
-+++ b/source/vm.h	2026-10-01 08:36:42.755467044 -0700
+--- a/source/vm.h	2026-10-01 10:20:02.421285509 -0700
++++ b/source/vm.h	2026-10-01 10:20:02.427172235 -0700
 @@ -113,6 +113,10 @@
      bool IsPaused();
  

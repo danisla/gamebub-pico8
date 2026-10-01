@@ -54,5 +54,18 @@ function missing(t)
 end
 check("missing",missing({})==nil)
 
+-- only _ENV falls back to the sandbox: a missing field named like an API
+-- function is nil (as in PICO-8), in a table, through an upvalue, in a loop
+local e={x=1}
+check("field flip",e.flip==nil)
+check("field t",e.t==nil)
+check("field circ",e["circ"]==nil)
+local cfg={}
+function getcfg() return cfg.line end
+check("upvalue field",getcfg()==nil)
+local n=0
+for o in all({{},{}}) do if (o.time) n+=1 end
+check("loop field",n==0)
+
 printh(fails==0 and "envtest ok" or "envtest failed")
 function _draw() cls() print(fails==0 and "ok" or "failed") end
