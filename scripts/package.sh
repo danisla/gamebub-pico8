@@ -15,6 +15,8 @@ for f in "$BIT" "$BIN"; do
 done
 rm -rf "$ROOT/dist/cores" "$ROOT/dist/extras" "$ROOT/dist/pico8-gamebub.zip"
 mkdir -p "$OUT"
+# License and third-party notices, at the top of the zip.
+cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES" "$ROOT/dist/"
 cp "$ROOT"/core/PICO-8/*.json "$OUT/"
 cp "$BIT" "$OUT/pico8_rev4.bit"
 cp "$BIN" "$OUT/pico8.bin"
@@ -57,6 +59,8 @@ fi
 (cd "$ROOT/dist" && python3 -c "
 import os, zipfile
 with zipfile.ZipFile('pico8-gamebub.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+    for f in ('LICENSE', 'THIRD_PARTY_NOTICES'):
+        z.write(f)
     for d, _, files in list(os.walk('cores')) + list(os.walk('extras')):
         for f in sorted(files):
             z.write(os.path.join(d, f))

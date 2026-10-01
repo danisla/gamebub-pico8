@@ -4,6 +4,7 @@
 /rtl
 /sw/build
 /sw/build-test
+/sw/build-perf
 /sw/build-check
 /sim/obj_dir*
 /sim/out

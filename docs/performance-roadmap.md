@@ -1,7 +1,8 @@
 # Performance roadmap
 
-Heavy carts (Dinky Kong: ~100-130% of the 60 Hz frame at 111.1 MHz)
-are limited by the soft CPU. A faster ISA wouldn't help: the official
+Heavy carts were limited by the soft CPU (Dinky Kong: ~100-130% of the
+60 Hz frame at 111.1 MHz; now ~65% on its title after items 2a and 3, see
+Status). A faster ISA wouldn't help: the official
 PICO-8 is a closed Linux/Cortex-A binary, there's no hard ARM in the
 XC7A100T, and any soft CPU tops out around 100-150 MHz in this fabric. The
 gains have to come from more work per clock, from the FPGA doing work the CPU
@@ -23,7 +24,7 @@ new `pico8.bin`):
 
 1. Correctness, ~30 s: `sim/native_check.sh before` (old sources), change
    `sw/build/fake-08`, `sim/native_check.sh after`, then `sim/native_check.sh
-   compare before after`. fake-08 built natively, 6 carts x 1800 VM steps with
+   compare before after`. fake-08 built natively, 7 carts x 1800 VM steps with
    presses timed in steps: screen hashes after every step and the audio must
    be identical. (It doesn't cover RISC-V specifics: the accelerator, `sw/`
    platform code, timing.)
@@ -98,7 +99,7 @@ faster per clock but only meets timing at 76.9 MHz; an FPU would save ~2%.
   ways x 64 B). Probably not worth much: the SDRAM is busy only 3-9% of the
   time in the baseline profiles. Confirm with hit/miss counters in the
   simulation (refills per kilo-instruction for I$ and D$). Block RAM is the
-  constraint: 113.5 of 135 tiles used (the 64 KiB block RAM is now the PICO-8
+  constraint: 118 of 135 tiles used (the 64 KiB block RAM is now the PICO-8
   RAM, item 2a).
 * **Bit manipulation (`--with-rvZbb`, `--with-rvZba`).** `sh1add/sh2add`
   (table indexing in the VM), `andn`, `clz/ctz`, `rev8`, `sext.b/h`,
@@ -142,8 +143,8 @@ SoC learns to generate two variants.
 
 ## 2. Hot paths in hardware
 
-**Goal:** take work off the CPU: the FPGA has spare LUTs (~16% used) and
-DSPs (8 of 240); block RAM is tight (113.5 of 135 tiles).
+**Goal:** take work off the CPU: the FPGA has spare LUTs (~17% used) and
+DSPs (8 of 240); block RAM is tight (118 of 135 tiles).
 
 ### 2a. Graphics accelerator (blitter)
 
@@ -215,14 +216,11 @@ see below).
   (screen accesses, full FIFO), with an extra frame of latency.
   Pitfalls found on the way: dropping the newest frame (the CPU path's
   policy) or replacing the pending one both lock onto every other frame
-  with uneven step times (Dinky Kong's title flickers between two renderings
-  every frame: it looked frozen); the accelerator's own flip reaches the
-  queue count 2 cycles late, so a back-to-back PRESENT must wait for it, or
-  it copies into the front buffer (a torn frame). The CPU path drops the newest frame
-  instead, and with uneven step times (Dinky Kong's title: ~115% then ~60%
-  of a frame) dropping (or replacing the pending frame) locks onto every
-  other frame: Dinky Kong's title flickers between two renderings every
-  frame, so it looked frozen.
+  with uneven step times (Dinky Kong's title: ~115% then ~60% of a frame,
+  and it flickers between two renderings every frame: it looked frozen);
+  the accelerator's own flip reaches the queue count 2 cycles late, so a
+  back-to-back PRESENT must wait for it, or it copies into the front buffer
+  (a torn frame).
 * Ordering: the SoC holds a CPU access to the PICO-8 RAM while the
   accelerator is busy if it's a write below 0x3100 (sprites, map, flags) or
   any access to the screen (0x6000-0x7FFF), and accesses to the back buffer.
@@ -258,24 +256,28 @@ the CPU only build (`sim/cmp_frames.py`, both directions) until the first
 button press (presses are timed in video frames, and the builds run at
 different speeds).
 
-Vivado (111.1 MHz, worst case): LUTs 9974 -> 12106 (19%), block RAM 113.5 ->
-117.5 tiles (third display buffer), DSPs unchanged; worst slack -0.06 ns,
-only CPU internal and SDRAM read capture paths (as before the accelerator,
-~-0.25 ns). Not tested on hardware yet.
+Vivado (111.1 MHz, worst case): LUTs 9974 -> ~11000 (17%), block RAM 113.5
+-> 118 tiles (third display buffer), DSPs unchanged; worst slack -0.05 ns
+after the SoC pipelining (item 1, Fmax), the SDRAM read capture only.
+Tested on a rev 4 device; the release core.
 
 What's left is the Lua VM (items 1 and 3). poom's gameplay can't be
 measured: it's a multicart (`load("poom_1.p8.png")`, not supported).
 
 **Next:**
 
-1. Hardware test (`dist/pico8-gpu-test.zip`, core "PICO-8 (GPU test)").
-2. Throughput: SPR is 4 cycles per 8 destination pixels; reuse the source
-   word between destination words (3 cycles), and RECT writes whole words.
-3. Move what's left by the profile: `tline` (poom-like carts), `pset` /
-   `line` / `circ` (a PIXEL / LINE command), `sspr` stretching, `map` cell
-   loop (one command per call instead of per cell).
-4. Cut the CPU side: the draw state reads are uncached (~5 cycles each), so
+1. Throughput: SPR is 4 cycles per 8 destination pixels (plus a setup state
+   per command); reuse the source word between destination words, and RECT
+   writes whole words.
+2. Move what's left by the profile: flipped and stretched `sspr` (Praxis
+   Fighter X draws most sprites with it: fake-08's stretch blitter, on the
+   CPU), `tline` (poom-like carts), `pset` / `line` / `circ` (a PIXEL / LINE
+   command), the text modes the GLYPH fast path doesn't cover (wide, tall,
+   inverted, background), the `map` cell loop (one command per call).
+3. Cut the CPU side: the draw state reads are uncached (~5 cycles each), so
    cache the draw state reads per call, and batch `map` cells.
+4. Check the paths the accelerator doesn't cover (CPU drawing on uncached
+   RAM, ~4x slower per pixel than before) with carts that lean on them.
 
 ### 2b. Lua VM helpers (later, after 2a and item 3)
 
@@ -375,12 +377,7 @@ Plan, cheapest first:
   part) and `NOGC` in `sim/audiocmp/native_main.cpp`; memcheck runs clean on
   the native carts (`valgrind ./sim/audiocmp/native-check cart N out.wav`).
 
-**Next for object-heavy carts** (Praxis Fighter: ~10M cycles per frame on
-the title, Lua bound): the Lua functions below; flipped and stretched `sspr`
-on the accelerator (a scaled blit command: fake-08's stretch blitter runs on
-the CPU, on uncached memory on the device).
-
-**Done:** `count`, `foreach`, `add`, `del`, `deli` in C
+* `count`, `foreach`, `add`, `del`, `deli` in C
 (`installTableHelpers` in `picoluaapi.cpp`): a C function for a table
 without a metatable and the usual argument types, the former Lua function
 (kept, as an upvalue) for anything else, so edge cases and error messages
@@ -390,7 +387,11 @@ test catches it) and `sim/native_check.sh` (identical on all carts);
 memcheck clean. Native instructions per frame: Celeste -6.7%, Dinky Kong
 -2.2%.
 
-**Lua functions to move to C** (the list these came from), by measured share of each cart's VM
+Praxis Fighter X's title: 10.3M -> 5.8M cycles per step on the device CPU
+(simulated), with `all()` in C, the optimized VM and the sandbox fallback
+fix.
+
+**Lua functions moved to C** (all of them now), by measured share of each cart's VM
 instructions (exact counts: `INSTR_COUNT=1` with a counting build of
 `lvm.c`, see `sim/audiocmp/native_main.cpp`; 7 carts x 1800 frames with
 presses, `all()` already in C). fake-08 implements these PICO-8 API
@@ -406,17 +407,10 @@ functions in Lua (`p8GlobalLuaFunctions.h`); everything else is C already.
 | - | `__z8_tick`, `flip` (per-frame glue) | Beckon 13%, else <2% | ~30 VM instructions and 3 C calls per frame | not worth it (absolute cost is tiny) |
 | - | `assert`, `menuitem`, `cartdata`, `load`, `stop`, `serial`, `__z8_strlen` | not per frame | | no |
 
-Notes: 1-5 are one change (same pattern as `all()`; ~150 lines), and must
-keep the Lua versions' exact behavior, including metatables (`__index`,
-`__len`, `__eq`) and their error messages where carts could see them; check
-with `sim/native_check.sh` and a randomized test cart like `alltest.p8`
-(the old Lua functions as the reference). The shares are of VM
-instructions, so the gain is a bit more than they show (each of those Lua
-instructions also costs C calls: `#c`, `mid`, table reads). Most of a heavy
-cart's time is its own Lua code: z8lua runs a global variable access loop at
-~2.5x the instructions of stock Lua 5.2 (212 vs 85 x86 instructions per VM
-instruction, `x=x+1` on a global), a VM level item to look into (fix32
-arithmetic, table access).
+Most of a heavy cart's time is now its own Lua code, run by a VM on par
+with stock Lua 5.2 (`sim/audiocmp/vmbench.py`): the device profile is flat
+(Dinky Kong's title: the VM ~12%, text drawing ~5% (mostly the CPU side of
+GLYPH), string building ~8%, the rest spread out, 35% idle).
 
 **Goal:** fewer instructions and fewer cache misses for the same Lua
 program. Already done (README "Design notes"): integer `fix32` conversions,
@@ -461,8 +455,8 @@ functions, pick the top ones; every change checked for identical output
 
 | | |
 |-|-|
-| 1. CPU microarchitecture | not started |
-| 2a. Graphics accelerator | first version: simulated (same frames, ~5-20% less CPU time), Vivado timing no worse than before (still slightly short in the CPUs, as before); needs a hardware test |
+| 1. CPU microarchitecture | SoC pipelined for timing (111.1 MHz: -0.05 ns); 125 MHz still short in the CPUs and the SDRAM capture; CPU options not tried |
+| 2a. Graphics accelerator | the release core (tested on a rev 4 device): same frames as without it, ~5-20% less CPU time |
 | 2b. Lua VM helpers | not started |
 | 2c. Arithmetic helpers | API argument conversions done (software); divider planned |
 | 3. Software | Lua VM optimized (was -O0); `all`, `count`, `foreach`, `add`, `del`, `deli` in C; trig table, input initialization and sandbox fallback fixes |

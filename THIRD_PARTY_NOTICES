@@ -1,0 +1,139 @@
+Third-party notices for the Game Bub PICO-8 core
+================================================
+
+This project's own code is under the MIT license (LICENSE). It builds on and
+redistributes the components below, which keep their own licenses. The
+release (pico8-gamebub.zip) contains:
+
+  pico8_rev4.bit  the FPGA bitstream: the Game Bub framework, VexiiRiscv
+  pico8.bin       the CPU program: fake-08, z8lua (Lua 5.2, zepto8, eris),
+                  LodePNG, miniz, SimpleIni (ConvertUTF), newlib, libstdc++
+
+PICO-8 is a trademark of Lexaloffle Games. This project is not affiliated
+with, endorsed or supported by Lexaloffle.
+
+
+Game Bub framework (framework/, in the bitstream)
+-------------------------------------------------
+https://github.com/gamebub/framework, by Eli Lipsitz.
+Used unmodified, under the CERN Open Hardware Licence Version 2 - Weakly
+Reciprocal (CERN-OHL-W-2.0), as framework/LICENSE allows; the Game Bub HDL
+it derives from is otherwise CERN-OHL-S-2.0. The framework's source is
+available at the URL above (this repository includes it as a submodule).
+Licence text: https://ohwr.org/cern_ohl_w_v2.txt
+
+
+VexiiRiscv (hdl/vexiiriscv/, in the bitstream)
+VexRiscv (hdl/vexriscv/, optional CPU)
+----------------------------------------------
+https://github.com/SpinalHDL/VexiiRiscv, https://github.com/SpinalHDL/VexRiscv
+MIT license. Copyright (c) 2023 SpinalHDL; Copyright (c) SpinalHDL
+contributors. Generated Verilog; see the LICENSE file in each directory.
+
+
+fake-08 (third_party/fake-08, modified by sw/fake08.patch; in pico8.bin)
+------------------------------------------------------------------------
+https://github.com/jtothebell/fake-08
+MIT license. Copyright (c) jtothebell and the fake-08 contributors.
+fake-08 is not related to or supported by Lexaloffle Software.
+
+
+z8lua (in fake-08's libs/z8lua; in pico8.bin)
+---------------------------------------------
+https://github.com/samhocevar/z8lua
+Based on Lua 5.2: MIT license, Copyright (C) 1994-2015 Lua.org, PUC-Rio.
+PICO-8 extensions from zepto8: WTFPL 2, Copyright (c) 2016-2024 Sam Hocevar.
+eris: MIT license, Copyright (c) 2013-2015 Florian Nuecke.
+
+
+zepto8 (parts of fake-08; sw/audio.cpp is derived from them)
+------------------------------------------------------------
+https://github.com/samhocevar/zepto8
+WTFPL 2. Copyright (c) 2016-2024 Sam Hocevar <sam@hocevar.net>
+
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+                    Version 2, December 2004
+
+ Copyright (C) 2004 Sam Hocevar <sam@hocevar.net>
+
+ Everyone is permitted to copy and distribute verbatim or modified
+ copies of this license document, and changing it is allowed as long
+ as the name is changed.
+
+            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+  0. You just DO WHAT THE FUCK YOU WANT TO.
+
+
+LodePNG (in pico8.bin)
+----------------------
+https://lodev.org/lodepng/
+Copyright (c) 2005-2018 Lode Vandevenne
+
+This software is provided 'as-is', without any express or implied
+warranty. In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+    1. The origin of this software must not be misrepresented; you must not
+    claim that you wrote the original software. If you use this software
+    in a product, an acknowledgment in the product documentation would be
+    appreciated but is not required.
+
+    2. Altered source versions must be plainly marked as such, and must not be
+    misrepresented as being the original software.
+
+    3. This notice may not be removed or altered from any source
+    distribution.
+
+
+miniz (in pico8.bin)
+--------------------
+https://github.com/richgel999/miniz
+MIT license. Copyright 2013-2014 RAD Game Tools and Valve Software;
+Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC.
+
+
+SimpleIni (in pico8.bin)
+------------------------
+https://github.com/brofield/simpleini
+MIT license. Copyright (c) 2006-2024, Brodie Thiesfield.
+
+
+newlib (C library, in pico8.bin)
+--------------------------------
+https://sourceware.org/newlib/
+BSD-style and similar permissive licenses; see COPYING.NEWLIB in the newlib
+sources for the full list of notices.
+
+
+libstdc++ / libgcc (in pico8.bin)
+---------------------------------
+https://gcc.gnu.org/
+GPL-3.0 with the GCC Runtime Library Exception, which allows distributing
+programs linked with them under any license.
+
+
+MIT license text (for the MIT-licensed components above)
+--------------------------------------------------------
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

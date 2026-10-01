@@ -56,9 +56,26 @@ soft core in the FPGA:
   `hdl/vexiiriscv/`). [VexRiscv](https://github.com/SpinalHDL/VexRiscv) (MIT,
   `scripts/gen_vexriscv.sh`, `hdl/vexriscv/`) is still selectable
   (`cpuVexii = 0` in `HandheldPico8.scala`).
-* **Clock**: 111.1 MHz (CPU and SDRAM), and 125 MHz in the experimental
-  "PICO-8 (125 MHz)" core. Both were tested on hardware with `sw/clocktest`
-  (see Clock testing).
+* **Clock**: 111.1 MHz (CPU and SDRAM), tested on hardware with
+  `sw/clocktest` (see Clock testing). 125 MHz works on a test device but is
+  outside Vivado's worst case timing (an experimental core, not in the
+  current package).
+
+## AI assistance
+
+This port was developed with extensive AI assistance: most of its code (the
+SoC and graphics accelerator RTL, the Chisel core, the CPU program and the
+fake-08 changes), its tests and tools, and its documentation were written
+with Claude (Anthropic) in Claude Code, directed by the author, who chose
+what to build and tested the cores on a Game Bub. Every commit in this
+repository is co-authored by Claude (the `Co-Authored-By` trailers).
+Performance claims and correctness checks come from the simulations and
+tests described here and in `docs/performance-roadmap.md`; hardware results
+are from a single rev 4 device.
+
+The components it builds on (fake-08, z8lua, zepto8, VexiiRiscv, VexRiscv,
+the Game Bub framework) are their authors' work, under their licenses (see
+License).
 
 ## Install
 
@@ -73,12 +90,9 @@ see Build) and copy its `cores/PICO-8/` to `/cores/PICO-8/` on the SD card:
 `core.json`, `files.json`, `settings.json`, `pico8_rev4.bit` and `pico8.bin`.
 PICO-8 then appears in the core list.
 
-`cores/PICO-8-Fast/` is the same core at 125 MHz ("PICO-8 (125 MHz,
-experimental)" in the core list, ~12% faster). It worked on a test device,
-but is outside Vivado's worst case timing, so it may fail on other devices or
-when hot (crashes, errors in carts). `extras/` has hardware test programs
-(`memtest`, `clocktest`): they replace `pico8.bin`. Carts are `.p8` or `.p8.png` files; cart
-data (`cartdata()`) is saved next to the cart as `.p8d`.
+`extras/` has hardware test programs (`memtest`, `clocktest`): they replace
+`pico8.bin`. Carts are `.p8` or `.p8.png` files; cart data (`cartdata()`) is
+saved next to the cart as `.p8d`.
 
 Controls: D-pad, B = O, A = X (Y and X also work), Start = pause menu.
 
@@ -102,17 +116,27 @@ D-pad with it. The PICO-8 screen is square, so it's the same size (3x,
 * `core/PICO-8/`: SD card core definition.
 * `sw/`: the CPU program: startup, system calls (RAM file system, save
   buffer), the fake-08 platform layer (`gamebub.cpp`), audio (`audio.cpp`).
-* `sim/`: Verilator simulations:
-  * `sim/`: the SoC with an SDRAM model; runs `pico8.bin` with a cart, dumps
-    frames (PPM) and audio (WAV). `sim/hwtest/`: bare-metal hardware test.
+* `sim/`: simulations and test tools:
+  * `sim/`: the SoC with an SDRAM model (Verilator); runs `pico8.bin` with a
+    cart, dumps frames (PPM) and audio (WAV), samples the CPU's PC
+    (`--profile`). `cmp_frames.py` compares the frames of two runs.
+    `sim/hwtest/`: bare-metal hardware test; `sim/iobench/`: memory access
+    costs.
   * `sim/host/`: the generated Chisel core, driven like the firmware (file
     loading, commands, save readback).
-  * `sim/audiocmp/`: native builds of fake-08 with the original and the fixed
-    point audio, and comparison scripts.
+  * `sim/audiocmp/`: native (x86) builds of fake-08: the audio comparison,
+    `native_check.sh`'s builds (deterministic screen hashes and audio, to
+    check software changes in a minute), Lua profiling and traces
+    (`native_main.cpp`), `vmbench.py` (the Lua VM against stock Lua).
+  * `sim/carts/`: test carts (`gfxtest`, `alltest`, `tabletest`, `trigtest`,
+    `envtest`) and the baseline carts.
+* `docs/performance-roadmap.md`: profiles, what was optimized and how it was
+  checked, and what's next.
 * `sw/clocktest/`, `sw/memtest/`: hardware test programs (install as
   `pico8.bin`).
 * `nix/`: RISC-V toolchain (`toolchain.nix`) and a Vivado FHS environment for
   NixOS (`vivado-fhs.nix`).
+* `framework/`: the Game Bub framework (submodule).
 * `third_party/`: fake-08, VexiiRiscv and pythondata-cpu-vexriscv
   (submodules).
 
@@ -164,7 +188,10 @@ $(nix build --impure -f nix/vivado-fhs.nix --print-out-paths --no-link)/bin/viva
 
 The clock (`PICO8_SYSTEM_DIVIDER`, VCO 1000 MHz / divider) and SDRAM clock
 phase (`PICO8_SDRAM_PHASE`, degrees) can be set for a build with environment
-variables. The release is built with:
+variables (the defaults are the release's: 111.1 MHz, 225 degrees).
+`FAST_BIT` adds a second core with another bitstream, e.g. the experimental
+125 MHz one (not in the current release: it needs rebuilding and testing on
+hardware with the graphics accelerator):
 
 ```
 PICO8_SDRAM_PHASE=225 VIVADO_ENV=... ./scripts/build_clocktest.sh 9 8  # dist/clocktest/
@@ -183,9 +210,11 @@ cd sim && nix shell nixpkgs#verilator nixpkgs#gcc nixpkgs#gnumake nixpkgs#perl -
 python3 ppm2png.py out/last.ppm out/last.png 3
 ```
 
-The simulation runs at ~2.8 MHz (about 30x slower than real time).
+The VexiiRiscv simulation (two CPUs) runs at ~0.6 MHz (~180x slower than
+real time; the VexRiscv one at ~2.8 MHz); run several in parallel.
 `make vexii VEXII_DIR=obj_dir_nogfx VEXII_GFX=0` builds it without the
-graphics accelerator; `sim/cmp_frames.py` compares the frames of two runs
+graphics accelerator; `sim/cmp_frames.py` compares the frames of two runs.
+For software changes, `sim/native_check.sh` checks the output in a minute
 (see `docs/performance-roadmap.md`, "Measuring").
 
 ## Clock testing
@@ -210,37 +239,38 @@ one test core per bitstream (`pico8-clocktest.zip` in the releases).
 Measured on a rev 4 device (5 minutes of stress tests each, 0 errors at 100,
 111.1 and 125 MHz): the SDRAM works over about 100-340 degrees of clock phase
 (CL2), the same in degrees at each clock; the cores use 225 degrees, the
-middle (±2.5 ns of margin at 125 MHz). Vivado's timing (worst case): 100 MHz
-met, 111.1 MHz ~0.25 ns short (CPU), 125 MHz ~0.55 ns short (CPU) and the
-SDRAM read timing (with estimated board delays). The chip (Winbond
-W9825G6KH) is rated for CL2 at 133 MHz (-5/-6 grades).
+middle (±2.5 ns of margin at 125 MHz). Vivado's timing (worst case):
+111.1 MHz -0.05 ns (the SDRAM read capture only, with estimated board
+delays); 125 MHz short in both CPUs (up to ~0.8 ns) and the SDRAM read
+capture (~1.4 ns), see `docs/performance-roadmap.md` (Fmax). The chip
+(Winbond W9825G6KH) is rated for CL2 at 133 MHz (-5/-6 grades).
 
-A higher SDRAM clock (in its own clock domain) would help little: the SDRAM
-is busy ~20-25% of the time, and a clock domain crossing would add latency to
-each cache miss.
+A higher SDRAM clock (in its own clock domain) would help little: with
+VexiiRiscv's caches the SDRAM is busy under 10% of the time, and a clock
+domain crossing would add latency to each cache miss.
 
 ## Status
 
 * Simulated end to end: the host interface (file loading, commands, save
   readback) with the generated core, and fake-08 running carts on the soft
   CPU. Runs on a rev 4 device.
-* Performance (percent of the 60 Hz frame time, VM + audio, measured on the
-  CPU's cycle counter in simulation; the device matches the simulation):
+* Performance (CPU time per 60 Hz frame at 111.1 MHz, measured on the CPU's
+  cycle counter in simulation; the device matches the simulation; details
+  in `docs/performance-roadmap.md`):
 
-  | Cart                          | VexRiscv 90.9 MHz | VexiiRiscv 90.9 MHz | VexiiRiscv 111.1 MHz (est.) | |
-  |-------------------------------|------|-----|-----|---------------------|
-  | Beckon the Hellspawn (gameplay) | ~62% + 19% | ~40-47% + 15% | ~33-38% + 12% | full speed |
-  | Celeste                       | ~43% + 2% |  |  | full speed              |
-  | Dinky Kong (gameplay)         | ~210% + 23% | ~159% + 15% | ~130% + 12% | ~70% speed (~80% at 125 MHz) |
+  | Cart | before the accelerator and VM work | now | |
+  |------|-----|-----|-----|
+  | Beckon the Hellspawn (gameplay) | ~40% | ~16% | full speed |
+  | Celeste | ~30% | ~20% | full speed |
+  | Dinky Kong (title) | ~105% | ~65% | full speed |
+  | Praxis Fighter X (title) | ~550% (10.3M cycles per step) | ~310% (5.8M) | Lua bound |
 
-  With the audio core, the audio part (the second number) runs on the second
-  CPU: the main CPU spends ~1% of the frame on it (copying changed sound
-  memory), and the audio core is 1-12% busy (simulated at 111.1 MHz, no FIFO
-  underruns). Output matches the single CPU build (Beckon, Dinky Kong).
-  Heavy carts are limited by the Lua VM on the soft CPU. Dual issue
-  VexiiRiscv (`cpuVexii = 2`) is only ~4% faster per clock and meets timing
-  at 76.9 MHz at best (a slower clock overall). An FPU would save ~2% (soft
-  float is 2-5% of the time, mostly audio control math).
+  The audio runs on the second CPU: the main CPU spends ~1% of the frame on
+  it (copying changed sound memory), and the audio core is 1-12% busy (no
+  FIFO underruns). Heavy carts are limited by the Lua VM on the soft CPU.
+  Dual issue VexiiRiscv (`cpuVexii = 2`) is only ~4% faster per clock and
+  meets timing at 76.9 MHz at best (a slower clock overall). An FPU would
+  save ~2%.
 * Cart data (`cartdata()`) is saved when it changes (fake-08 only saves it
   when a cart is closed, and the core is simply stopped by the host).
 
@@ -249,15 +279,21 @@ Design notes:
   cycles; VexRiscv's data cache is write-through) and bursts cache lines (8
   words for VexRiscv, 16 for VexiiRiscv).
 * `sw/fake08.patch`: changes to fake-08 (applied to a copy in `sw/build/`,
-  regenerate with `scripts/make_fake08_patch.sh`): integer `fix32` <-> double
-  conversions (used for every PICO-8 API argument), `Vm::flushCartData()`,
-  faster `map()`/`mget()` (cached map geometry, only visible cells),
-  text and sprite drawing (checked with `sim/audiocmp/drawtest.cpp`),
-  integer string to number conversion, force inlined `fix32` operators,
-  pattern-filled spans and `circfill` (each row drawn once), computed goto
-  dispatch in the Lua VM (`Z8_COMPUTED_GOTO`), and a fixed string hash seed
-  for tests (`Z8_FIXED_SEED`). Graphics changes are checked for identical
-  output with the native builds in `sim/audiocmp/`.
+  regenerate with `scripts/make_fake08_patch.sh`): the graphics accelerator
+  hooks (`graphics.cpp`, `sw/gfx.h`), the Lua VM compiled with optimization
+  (upstream z8lua had it at `-O0`), the sandbox fallback for `_ENV` only,
+  `all`/`count`/`foreach`/`add`/`del`/`deli` in C, Lua API arguments
+  converted to integers without soft float, integer `fix32` <-> double
+  conversions, `Vm::flushCartData()`, faster `map()`/`mget()`, text and
+  sprite drawing, integer string to number conversion, force inlined `fix32`
+  operators, pattern-filled spans and `circfill`, computed goto dispatch
+  (`Z8_COMPUTED_GOTO`), fixes (the sine table's missing last entry: `cos(0)`
+  was ~1.57; the keyboard and mouse state initialized; the sandbox fallback
+  writing to a reallocated stack), and fixed random and string hash seeds
+  for tests (`Z8_FIXED_SEED`, `make -C sw BUILD=build-test
+  EXTRA_DEFINES=-DZ8_FIXED_SEED`). Checked for identical output with the
+  native builds in `sim/audiocmp/` (`sim/native_check.sh`) and the test
+  carts.
 * Lua errors and coroutine yields use setjmp/longjmp (`LUA_USE_LONGJMP`)
   instead of C++ exceptions (fake-08 yields every frame).
 * New button presses are kept until the cart reads the buttons (30 fps carts
@@ -275,7 +311,21 @@ keyboard, save states.
 
 ## License
 
-Not chosen yet. Components: the Game Bub framework (`framework/`,
-CERN-OHL-S-2.0), fake-08 and z8lua (MIT), `sw/audio.cpp` (derived from fake-08
-and zepto8, MIT / WTFPL), VexiiRiscv and VexRiscv (MIT), newlib and libstdc++ (linked into
-`pico8.bin`).
+MIT (see `LICENSE`), for this project's own code. The components keep their
+own licenses (details and notices in `THIRD_PARTY_NOTICES`, which is also in
+the release zip):
+
+* Game Bub framework (`framework/`, submodule): used unmodified, under
+  CERN-OHL-W-2.0 as its `LICENSE` allows (the Game Bub HDL is otherwise
+  CERN-OHL-S-2.0). Keep it unmodified to keep that.
+* fake-08 (MIT) and its z8lua (Lua 5.2, MIT; zepto8 parts, WTFPL 2), changed
+  by `sw/fake08.patch`; the patched files keep their licenses.
+* `sw/audio.cpp`: derived from fake-08 and zepto8 (MIT / WTFPL 2).
+* VexiiRiscv and VexRiscv (MIT): generated Verilog in `hdl/vexiiriscv/` and
+  `hdl/vexriscv/`.
+* Linked into `pico8.bin`: LodePNG (zlib), miniz and SimpleIni (MIT), newlib
+  (BSD-style), libstdc++ (GPL-3.0 with the GCC Runtime Library Exception).
+
+PICO-8 is a trademark of Lexaloffle Games; this project is not affiliated with
+Lexaloffle. Carts aren't included (the test carts in `sim/carts/` are this
+project's own).

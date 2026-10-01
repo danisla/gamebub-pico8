@@ -15,6 +15,12 @@
 //
 // With AUDIO_CORE, this runs on the audio core (audio_core.h): the main CPU's
 // Audio object sends its calls there.
+//
+// Contains code from fake-08 (https://github.com/jtothebell/fake-08, MIT
+// license, Copyright (c) jtothebell and the fake-08 contributors) and zepto8
+// (https://github.com/samhocevar/zepto8, WTFPL 2, Copyright (c) 2016-2024 Sam
+// Hocevar). See THIRD_PARTY_NOTICES. Changes are under this project's MIT
+// license (LICENSE).
 
 #include "Audio.h"
 #include "filter.h"

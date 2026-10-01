@@ -36,8 +36,9 @@ PATH. The pieces come from nix, and are built in this order:
    `scripts/build_clocktest.sh` builds several clocks (`VIVADO_ENV` = the
    `vivado-env` path above).
 5. **Package**: `./scripts/package.sh` -> `dist/cores/PICO-8/` and
-   `dist/pico8-gamebub.zip` (see README "Build" for the release command with
-   the 125 MHz core).
+   `dist/pico8-gamebub.zip` (the release: the 111.1 MHz core; `FAST_BIT` adds
+   the experimental 125 MHz one, see README "Build", not in the current
+   release).
 
 ### nixpkgs isn't pinned
 
@@ -81,6 +82,16 @@ packages instead:
 
 ## Checking changes without Vivado
 
+- Software changes (fake-08, z8lua): `sim/native_check.sh` (see
+  `docs/performance-roadmap.md`, "Measuring"): native builds, screen hashes
+  and audio of 7 carts, deterministic; run `before` and `after` a change
+  (edit `sw/build/fake-08`, then `scripts/make_fake08_patch.sh`) and
+  `compare` them. Needs a compiler: `nix-shell -p gcc gnumake --run ...`.
+  The test carts in `sim/carts/` (`alltest`, `tabletest`, `trigtest`,
+  `envtest`, `gfxtest`) print `... ok` (natively with
+  `sim/audiocmp/native-check cart 3 out.wav`, or in the SoC simulation).
+  For simulation runs that must match, build the program with fixed seeds:
+  `make -C sw BUILD=build-test EXTRA_DEFINES=-DZ8_FIXED_SEED`.
 - Chisel only (compiles Scala, elaborates, emits SystemVerilog; seconds):
   ```
   ./framework/mill -i --no-build-lock root.runMain platform.handheld.HandheldTop \
@@ -90,10 +101,14 @@ packages instead:
   `obj_dir_vexii/Vsim_top` (the release CPU, VexiiRiscv at 111.1 MHz);
   `make` builds the VexRiscv variant. Run with
   `./obj_dir_vexii/Vsim_top [--frames N --dump-every N --press F:B[:L] --rotate R --out DIR] ../sw/build/pico8.bin cart.p8.png`,
-  frames are PPM (`python3 ppm2png.py in.ppm out.png 3`). ~30x slower than
-  real time.
+  frames are PPM (`python3 ppm2png.py in.ppm out.png 3`). ~0.6 MHz (~180x
+  slower than real time): run several in parallel, each alone is no faster
+  (Verilator threads and `-O3` don't help). `--profile F` samples the PC;
+  `sim/cmp_frames.py` compares two runs' frames; `VEXII_GFX=0` builds it
+  without the graphics accelerator.
 - Host interface simulation (`sim/host/`): needs the generated core from a
-  full `buildCore` first.
+  full `buildCore` first. The host sends files as whole 32-bit words, like
+  the firmware: pad `.p8` test carts to a multiple of 4 bytes.
 
 ## Layout notes
 
