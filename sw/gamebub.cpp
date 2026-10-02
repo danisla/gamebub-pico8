@@ -73,9 +73,10 @@ uint8_t mapButtons(uint32_t buttons) {
     if (buttons & BTN_RIGHT) ret |= P8_RIGHT;
     if (buttons & BTN_UP) ret |= P8_UP;
     if (buttons & BTN_DOWN) ret |= P8_DOWN;
-    // As in the fake-08 libretro core: B (bottom) is O, A (right) is X.
-    if (buttons & (BTN_B | BTN_Y)) ret |= P8_O;
-    if (buttons & (BTN_A | BTN_X)) ret |= P8_X;
+    // A (right) is O, B (bottom) is X; the "Button layout" setting swaps
+    // them back in hardware (the fake-08 libretro core's: B is O, A is X).
+    if (buttons & (BTN_A | BTN_X)) ret |= P8_O;
+    if (buttons & (BTN_B | BTN_Y)) ret |= P8_X;
     if (buttons & BTN_START) ret |= P8_PAUSE;
     return ret;
 }

@@ -18,6 +18,17 @@
         { "label": "Portrait, D-pad at bottom", "value": 1 },
         { "label": "Portrait, D-pad at top", "value": 2 }
       ]
+    },
+    {
+      "id": 2,
+      "label": "Button layout",
+      "type": "list",
+      "address": "0x00002008",
+      "default": 0,
+      "items": [
+        { "label": "A = O, B = X", "value": 0 },
+        { "label": "B = O, A = X", "value": 1 }
+      ]
     }
   ]
 }

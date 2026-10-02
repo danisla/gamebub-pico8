@@ -117,7 +117,7 @@ packages instead:
   core adapts to it. After cloning: `git submodule update --init framework`.
 - The core's register map for the host (`HandheldPico8.scala`) is what
   `core/PICO-8/settings.json` addresses (`0x2000` reset, `0x2004` screen
-  rotation). Firmware v1.1-beta2 setting types: `action`, `checkbox`, `list`
+  rotation, `0x2008` A/B button swap). Firmware v1.1-beta2 setting types: `action`, `checkbox`, `list`
   (up to 8 items); non-action values are sent at every core start, before it
   runs.
 - Adding a SoC port means updating `hdl/pico8_soc.sv`, `hdl/pico8_gamebub.sv`,

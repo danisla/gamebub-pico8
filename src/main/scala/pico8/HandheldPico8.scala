@@ -206,6 +206,13 @@ class HandheldPico8 extends Module with Core {
   val regRotation = RegInit(0.U(2.W))
   pico8.rotation := regRotation
 
+  /**
+   * "Button layout" setting: 1 swaps A with B and X with Y on the buttons the
+   * CPU reads (the program maps A/X to O and B/Y to X). Written by the host
+   * before the core runs.
+   */
+  val regSwapAB = RegInit(false.B)
+
   // "Reset" setting: hold the CPU in reset for a moment, restarting the cart.
   val regResetTimer = RegInit(0.U(8.W))
   when (regCoreResetOnce) {
@@ -245,6 +252,7 @@ class HandheldPico8 extends Module with Core {
       0x0004 -> RegisterMap.Entry.r(pico8.saveSize),
       0x2000 -> RegisterMap.Entry.w(regCoreResetOnce),
       0x2004 -> RegisterMap.Entry.rw(regRotation),
+      0x2008 -> RegisterMap.Entry.rw(regSwapAB),
     )
   )
 
@@ -354,10 +362,10 @@ class HandheldPico8 extends Module with Core {
     buttons.select,
     buttons.r,
     buttons.l,
-    buttons.y,
-    buttons.x,
-    buttons.b,
-    buttons.a,
+    Mux(regSwapAB, buttons.x, buttons.y),
+    Mux(regSwapAB, buttons.y, buttons.x),
+    Mux(regSwapAB, buttons.a, buttons.b),
+    Mux(regSwapAB, buttons.b, buttons.a),
     dpad(buttons.up, buttons.right, buttons.left),
     dpad(buttons.down, buttons.left, buttons.right),
     dpad(buttons.left, buttons.up, buttons.down),

@@ -121,12 +121,16 @@ the Lua VM. It is experimental, so the default stays at 111.1 MHz:
   margin can shift: each build needs to be tested on hardware again.
 * Power use and heat are slightly higher.
 
-Controls: D-pad, B = O, A = X (Y and X also work), Start = pause menu.
+Controls: D-pad, A = O, B = X (X and Y also work: X = O, Y = X), Start =
+pause menu. The "Button layout" setting swaps them back (B = O, A = X, as
+in the fake-08 libretro core).
 
 Settings: "Screen rotation" turns the screen 90 degrees, to play with the
 device held in portrait ("D-pad at bottom" or "D-pad at top"), and turns the
 D-pad with it. The PICO-8 screen is square, so it's the same size (3x,
 384x384) either way: 480 pixels (the short side) is the limit.
+"Button layout" chooses which face buttons are O and X ("A = O, B = X" by
+default, or "B = O, A = X").
 
 ## Layout
 
