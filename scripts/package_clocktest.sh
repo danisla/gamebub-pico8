@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Assemble the clock test kit (dist/pico8-clocktest.zip) from the bitstreams
 # built by scripts/build_clocktest.sh and sw/clocktest/clocktest.bin: one SD
-# card core per bitstream ("PICO-8 test <MHz> MHz", /cores/PICO-8-T<MHz>/), each
+# card core per bitstream ("PICO-8 T<MHz>", /cores/PICO-8-T<MHz>/), each
 # running the clock test instead of the emulator.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,8 +14,9 @@ mkdir -p "$KIT/cores"
 for bit in "$IN"/pico8_rev4_*.bit; do
     variant=$(basename "$bit" .bit); variant=${variant#pico8_rev4_}  # <MHz>[_p<phase>]
     mhz=${variant%%_p*}
-    label="$mhz MHz"
-    [ "$variant" != "$mhz" ] && label="$label, SDRAM phase ${variant##*_p}"
+    # The firmware limits the core name to 32 bytes (longer ones are not listed).
+    label="T$mhz"
+    [ "$variant" != "$mhz" ] && label="$label p${variant##*_p}"
     dir="$KIT/cores/PICO-8-T${variant//./_}"
     mkdir -p "$dir"
     cp "$bit" "$dir/pico8_rev4.bit"
@@ -25,7 +26,7 @@ for bit in "$IN"/pico8_rev4_*.bit; do
 {
   "metadata": {
     "id": "PICO-8-T${variant//./_}",
-    "name": "PICO-8 test $label",
+    "name": "PICO-8 $label",
     "author": "fake-08 (RISC-V)"
   },
   "bitstreams": [

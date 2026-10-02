@@ -56,10 +56,10 @@ soft core in the FPGA:
   `hdl/vexiiriscv/`). [VexRiscv](https://github.com/SpinalHDL/VexRiscv) (MIT,
   `scripts/gen_vexriscv.sh`, `hdl/vexriscv/`) is still selectable
   (`cpuVexii = 0` in `HandheldPico8.scala`).
-* **Clock**: 111.1 MHz (CPU and SDRAM), tested on hardware with
-  `sw/clocktest` (see Clock testing). 125 MHz works on a test device but is
-  outside Vivado's worst case timing (an experimental core, not in the
-  current package).
+* **Clock**: 111.1 MHz (CPU and SDRAM) for the default core, tested on
+  hardware with `sw/clocktest` (see Clock testing). A second, experimental
+  core runs at 125 MHz (~12% faster): it works on the test device but is
+  outside Vivado's worst case timing, see "125 MHz core" below.
 
 ## AI assistance
 
@@ -90,9 +90,36 @@ see Build) and copy its `cores/PICO-8/` to `/cores/PICO-8/` on the SD card:
 `core.json`, `files.json`, `settings.json`, `pico8_rev4.bit` and `pico8.bin`.
 PICO-8 then appears in the core list.
 
+The zip also has `cores/PICO-8-Fast/`, the same core at 125 MHz ("PICO-8
+(125 MHz, experimental)"): copy it too to try it, see "125 MHz core".
+
 `extras/` has hardware test programs (`memtest`, `clocktest`): they replace
 `pico8.bin`. Carts are `.p8` or `.p8.png` files; cart data (`cartdata()`) is
 saved next to the cart as `.p8d`.
+
+### 125 MHz core
+
+`PICO-8-Fast` is the same design and program as `PICO-8` with the clock
+raised from 111.1 to 125 MHz, about 12% faster on carts that are limited by
+the Lua VM. It is experimental, so the default stays at 111.1 MHz:
+
+* Vivado's worst case timing is not met at 125 MHz (about -0.9 ns in the CPU
+  and -1.4 ns on the SDRAM read capture, see Clock testing). Vivado assumes a
+  slow chip, high temperature and low voltage. It passed the stress test
+  (0 errors, cold and warm) and ran carts fine on one rev 4 device, but
+  other devices may have less margin.
+* If it fails, it fails as a freeze, a TRAP screen, corrupted graphics or
+  sound, or a crash after running for a while, most likely when the device is
+  hot (long sessions, a warm room, charging while playing) or on a low
+  battery. If you see any of these, go back to `PICO-8` (111.1 MHz) before
+  reporting a bug in the emulator.
+* To check your device, run the clock test (`pico8-clocktest.zip`, the
+  "PICO-8 T125 p225" core) for at least 5 minutes, both cold and after the
+  device has warmed up: it should show 0 errors and a wide passing window
+  around the built-in phase.
+* Rebuilding the bitstream changes placement and routing, so timing and
+  margin can shift: each build needs to be tested on hardware again.
+* Power use and heat are slightly higher.
 
 Controls: D-pad, B = O, A = X (Y and X also work), Start = pause menu.
 
@@ -189,9 +216,8 @@ $(nix build --impure -f nix/vivado-fhs.nix --print-out-paths --no-link)/bin/viva
 The clock (`PICO8_SYSTEM_DIVIDER`, VCO 1000 MHz / divider) and SDRAM clock
 phase (`PICO8_SDRAM_PHASE`, degrees) can be set for a build with environment
 variables (the defaults are the release's: 111.1 MHz, 225 degrees).
-`FAST_BIT` adds a second core with another bitstream, e.g. the experimental
-125 MHz one (not in the current release: it needs rebuilding and testing on
-hardware with the graphics accelerator):
+`FAST_BIT` adds a second core with another bitstream: the release has the
+experimental 125 MHz one (`PICO-8-Fast`, see "125 MHz core"):
 
 ```
 PICO8_SDRAM_PHASE=225 VIVADO_ENV=... ./scripts/build_clocktest.sh 9 8  # dist/clocktest/

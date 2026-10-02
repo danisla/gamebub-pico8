@@ -6,7 +6,7 @@ your Game Bub, by running a test program instead of the emulator.
 
 Install, either:
 * The clock test kit (pico8-clocktest.zip): each folder in cores/ is a
-  separate core with the PICO-8 hardware at one clock ("PICO-8 test 100 MHz",
+  separate core with the PICO-8 hardware at one clock ("PICO-8 T100",
   ...). Copy them to /cores/ on the SD card (next to /cores/PICO-8/, which is
   not changed).
 * Or this pico8.bin (extras/clocktest/ in the PICO-8 core zip): replace
